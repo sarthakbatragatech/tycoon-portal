@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -118,7 +119,6 @@ export default function OrdersPage() {
             {orders.map((o) => {
               const shortId = (o.id || "").slice(0, 8);
 
-              // Supabase sometimes returns parties as a single object, sometimes as array in types
               const rawParty = Array.isArray(o.parties)
                 ? o.parties[0]
                 : o.parties;
@@ -129,7 +129,17 @@ export default function OrdersPage() {
 
               return (
                 <tr key={o.id}>
-                  <td>{shortId}</td>
+                  <td>
+                    <Link
+                      href={`/orders/${o.id}`}
+                      style={{
+                        textDecoration: "none",
+                        color: "#f5f5f5",
+                      }}
+                    >
+                      {shortId}
+                    </Link>
+                  </td>
                   <td>
                     {partyName}
                     {city ? ` · ${city}` : ""}
