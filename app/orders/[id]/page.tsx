@@ -37,6 +37,7 @@ export default function OrderDetailPage() {
       .select(
         `
         id,
+        order_code,
         order_date,
         expected_dispatch_date,
         status,
@@ -83,7 +84,6 @@ export default function OrderDetailPage() {
       order_lines: (order.order_lines || []).map((l: any) => {
         if (l.id !== lineId) return l;
 
-        // Clamp between 0 and ordered qty
         const max = l.qty ?? 0;
         let safe = num;
         if (safe < 0) safe = 0;
@@ -158,10 +158,10 @@ export default function OrderDetailPage() {
 
   const lines = order.order_lines || [];
   const statusLabel = STATUS_LABELS[order.status] ?? order.status;
+  const displayCode = order.order_code || order.id;
 
   return (
     <>
-      {/* HEADER */}
       <h1 className="section-title">Order Detail</h1>
       <p className="section-subtitle">
         Full breakdown of this Tycoon order with dispatch tracking.
@@ -170,11 +170,13 @@ export default function OrderDetailPage() {
       {/* TOP SUMMARY */}
       <div className="card-grid" style={{ marginBottom: 18 }}>
         <div className="card">
-          <div className="card-label">Order ID</div>
+          <div className="card-label">Order Code</div>
           <div className="card-value" style={{ fontSize: 16 }}>
-            {order.id}
+            {displayCode}
           </div>
           <div className="card-meta">
+            Internal ID: <span style={{ fontSize: 11 }}>{order.id}</span>
+            <br />
             Status:{" "}
             <span style={{ textTransform: "uppercase" }}>{statusLabel}</span>
           </div>

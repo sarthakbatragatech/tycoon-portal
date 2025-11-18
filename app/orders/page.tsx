@@ -31,6 +31,7 @@ export default function OrdersPage() {
       .select(
         `
         id,
+        order_code,
         order_date,
         status,
         total_qty,
@@ -58,7 +59,7 @@ export default function OrdersPage() {
     0
   );
   const totalValue = orders.reduce(
-    (sum, o) => sum + (o.total_value ?? 0),
+    (sum, o) => sum + (Number(o.total_value ?? 0)),
     0
   );
 
@@ -106,7 +107,7 @@ export default function OrdersPage() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "20%" }}>Order ID</th>
+              <th style={{ width: "24%" }}>Order Code</th>
               <th>Party</th>
               <th>Date</th>
               <th>Qty</th>
@@ -117,8 +118,6 @@ export default function OrdersPage() {
 
           <tbody>
             {orders.map((o) => {
-              const shortId = (o.id || "").slice(0, 8);
-
               const rawParty = Array.isArray(o.parties)
                 ? o.parties[0]
                 : o.parties;
@@ -126,6 +125,8 @@ export default function OrdersPage() {
               const partyName = rawParty?.name ?? "Unknown party";
               const city = rawParty?.city ?? "";
               const statusLabel = STATUS_LABELS[o.status] ?? o.status;
+              const displayCode =
+                o.order_code || (o.id || "").slice(0, 8);
 
               return (
                 <tr key={o.id}>
@@ -137,7 +138,7 @@ export default function OrdersPage() {
                         color: "#f5f5f5",
                       }}
                     >
-                      {shortId}
+                      {displayCode}
                     </Link>
                   </td>
                   <td>
