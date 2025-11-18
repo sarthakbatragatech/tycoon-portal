@@ -123,13 +123,11 @@ export default function PunchOrderPage() {
       return;
     }
 
-    // 1) Insert into orders table
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert([
         {
           party_id: partyId,
-          stakeholder_id: "admin", // TEMP until we add login system
           status,
           order_date: orderDate,
           expected_dispatch_date: expectedDate || null,
@@ -148,7 +146,6 @@ export default function PunchOrderPage() {
 
     const orderId = order.id;
 
-    // 2) Insert into order_lines
     const linesToInsert = withDetails
       .filter((l) => l.itemId && l.qty > 0)
       .map((l) => ({
