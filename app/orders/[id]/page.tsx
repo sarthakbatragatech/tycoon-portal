@@ -22,6 +22,7 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingDispatch, setSavingDispatch] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -49,6 +50,7 @@ export default function OrderDetailPage() {
         order_lines (
           id,
           qty,
+          dispatched_qty,
           dealer_rate_at_order,
           line_total,
           items (
@@ -69,6 +71,59 @@ export default function OrderDetailPage() {
     }
 
     setLoading(false);
+  }
+
+  function handleDispatchedChange(lineId: string, value: string) {
+    if (!order) return;
+    const raw = value === "" ? "" : Number(value);
+    const num = Number.isNaN(raw) ? 0 : raw;
+
+    const updated = {
+      ...order,
+      order_lines: (order.order_lines || []).map((l: any) => {
+        if (l.id !== lineId) return l;
+
+        // Clamp between 0 and ordered qty
+        const max = l.qty ?? 0;
+        let safe = num;
+        if (safe < 0) safe = 0;
+        if (safe > max) safe = max;
+
+        return { ...l, dispatched_qty: safe };
+      }),
+    };
+
+    setOrder(updated);
+  }
+
+  async function saveDispatch() {
+    if (!order) return;
+    setSavingDispatch(true);
+
+    try {
+      const lines = order.order_lines || [];
+
+      for (const l of lines) {
+        const dispatched = l.dispatched_qty ?? 0;
+
+        const { error } = await supabase
+          .from("order_lines")
+          .update({ dispatched_qty: dispatched })
+          .eq("id", l.id);
+
+        if (error) {
+          console.error("Error updating line", l.id, error);
+          alert("Error updating some lines: " + error.message);
+          setSavingDispatch(false);
+          return;
+        }
+      }
+
+      alert("Dispatch quantities updated.");
+      await loadOrder();
+    } finally {
+      setSavingDispatch(false);
+    }
   }
 
   if (loading) {
@@ -109,7 +164,7 @@ export default function OrderDetailPage() {
       {/* HEADER */}
       <h1 className="section-title">Order Detail</h1>
       <p className="section-subtitle">
-        Full breakdown of a single Tycoon order.
+        Full breakdown of this Tycoon order with dispatch tracking.
       </p>
 
       {/* TOP SUMMARY */}
@@ -174,7 +229,7 @@ export default function OrderDetailPage() {
         </div>
       )}
 
-      {/* ITEMS TABLE */}
+      {/* ITEMS TABLE WITH DISPATCHED QTY */}
       <div className="table-wrapper">
         <div className="table-header">
           <div className="table-title">Items in this order</div>
@@ -186,10 +241,12 @@ export default function OrderDetailPage() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "30%" }}>Item</th>
+              <th style={{ width: "24%" }}>Item</th>
               <th>Category</th>
               <th>Rate</th>
-              <th style={{ width: 80 }}>Qty</th>
+              <th>Ordered</th>
+              <th>Dispatched</th>
+              <th>Pending</th>
               <th>Total</th>
             </tr>
           </thead>
@@ -200,6 +257,10 @@ export default function OrderDetailPage() {
                   ? l.items[0]
                   : l.items;
 
+              const ordered = l.qty ?? 0;
+              const dispatched = l.dispatched_qty ?? 0;
+              const pending = Math.max(ordered - dispatched, 0);
+
               return (
                 <tr key={l.id}>
                   <td>{item?.name ?? "Unknown item"}</td>
@@ -207,7 +268,28 @@ export default function OrderDetailPage() {
                   <td>
                     ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
                   </td>
-                  <td>{l.qty ?? 0} pcs</td>
+                  <td>{ordered} pcs</td>
+                  <td>
+                    <input
+                      type="number"
+                      min={0}
+                      max={ordered}
+                      value={dispatched}
+                      onChange={(e) =>
+                        handleDispatchedChange(l.id, e.target.value)
+                      }
+                      style={{
+                        width: 80,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: "1px solid #333",
+                        background: "#050505",
+                        color: "#f5f5f5",
+                        fontSize: 12,
+                      }}
+                    />
+                  </td>
+                  <td>{pending} pcs</td>
                   <td>₹ {(l.line_total ?? 0).toLocaleString("en-IN")}</td>
                 </tr>
               );
@@ -215,7 +297,7 @@ export default function OrderDetailPage() {
 
             {lines.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", padding: 12 }}>
+                <td colSpan={7} style={{ textAlign: "center", padding: 12 }}>
                   No line items found for this order.
                 </td>
               </tr>
@@ -224,14 +306,23 @@ export default function OrderDetailPage() {
         </table>
       </div>
 
-      {/* BACK BUTTON */}
-      <div style={{ marginTop: 16 }}>
+      {/* ACTIONS */}
+      <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
         <button
           className="pill-button"
           type="button"
           onClick={() => router.push("/orders")}
         >
           ← Back to orders
+        </button>
+
+        <button
+          className="pill-button"
+          type="button"
+          onClick={saveDispatch}
+          disabled={savingDispatch}
+        >
+          {savingDispatch ? "Saving…" : "Save dispatch quantities"}
         </button>
       </div>
     </>
