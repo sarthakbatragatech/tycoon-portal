@@ -16,6 +16,7 @@ export default function PunchOrderPage() {
   const [expectedDate, setExpectedDate] = useState("");
   const [remarks, setRemarks] = useState("");
 
+  // qty is kept as string so it can be truly empty
   const [lines, setLines] = useState<any[]>([
     { lineId: "l1", itemId: "", qty: "" },
     { lineId: "l2", itemId: "", qty: "" },
@@ -62,13 +63,20 @@ export default function PunchOrderPage() {
         if (l.lineId !== id) return l;
 
         if (field === "qty") {
-          // Allow completely empty
+          // Allow fully empty
           if (value.trim() === "") {
             return { ...l, qty: "" };
           }
 
-          // Only allow numbers 0+
-          const num = Number(value);
+          // Keep only digits
+          const cleaned = value.replace(/[^\d]/g, "");
+
+          if (cleaned === "") {
+            return { ...l, qty: "" };
+          }
+
+          // Store as number (no leading zeros in state)
+          const num = parseInt(cleaned, 10);
           if (Number.isNaN(num) || num < 0) {
             return { ...l, qty: "" };
           }
@@ -92,6 +100,7 @@ export default function PunchOrderPage() {
     setLines((prev) => prev.filter((l) => l.lineId !== id));
   }
 
+  // Attach details & compute totals
   const withDetails = lines.map((l) => {
     const item = items.find((i) => i.id === l.itemId);
     const qty = l.qty === "" ? 0 : Number(l.qty);
@@ -345,9 +354,10 @@ export default function PunchOrderPage() {
                 <td>₹ {l.rate.toLocaleString("en-IN")}</td>
                 <td>
                   <input
-                    type="number"
-                    min={0}
-                    value={l.qty}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={l.qty === "" ? "" : String(l.qty)}
                     onChange={(e) =>
                       updateLine(l.lineId, "qty", e.target.value)
                     }
