@@ -74,22 +74,35 @@ export default function OrderDetailPage() {
     setLoading(false);
   }
 
+  // Make dispatched_qty behave like qty: editable, can be empty, numeric only
   function handleDispatchedChange(lineId: string, value: string) {
     if (!order) return;
-    const raw = value === "" ? "" : Number(value);
-    const num = Number.isNaN(raw) ? 0 : raw;
 
     const updated = {
       ...order,
       order_lines: (order.order_lines || []).map((l: any) => {
         if (l.id !== lineId) return l;
 
-        const max = l.qty ?? 0;
-        let safe = num;
-        if (safe < 0) safe = 0;
-        if (safe > max) safe = max;
+        // Allow fully empty input
+        if (value.trim() === "") {
+          return { ...l, dispatched_qty: "" };
+        }
 
-        return { ...l, dispatched_qty: safe };
+        // Keep only digits
+        const cleaned = value.replace(/[^\d]/g, "");
+        if (cleaned === "") {
+          return { ...l, dispatched_qty: "" };
+        }
+
+        let num = parseInt(cleaned, 10);
+        if (Number.isNaN(num) || num < 0) {
+          num = 0;
+        }
+
+        const max = l.qty ?? 0;
+        if (num > max) num = max;
+
+        return { ...l, dispatched_qty: num };
       }),
     };
 
@@ -104,7 +117,17 @@ export default function OrderDetailPage() {
       const lines = order.order_lines || [];
 
       for (const l of lines) {
-        const dispatched = l.dispatched_qty ?? 0;
+        // Convert "" / null to 0, clamp to [0, qty]
+        const raw =
+          l.dispatched_qty === "" || l.dispatched_qty == null
+            ? 0
+            : Number(l.dispatched_qty);
+
+        let dispatched = Number.isNaN(raw) ? 0 : raw;
+        const max = l.qty ?? 0;
+
+        if (dispatched < 0) dispatched = 0;
+        if (dispatched > max) dispatched = max;
 
         const { error } = await supabase
           .from("order_lines")
@@ -260,7 +283,19 @@ export default function OrderDetailPage() {
                   : l.items;
 
               const ordered = l.qty ?? 0;
-              const dispatched = l.dispatched_qty ?? 0;
+
+              const rawDispatched =
+                l.dispatched_qty === "" || l.dispatched_qty == null
+                  ? 0
+                  : Number(l.dispatched_qty);
+
+              let dispatched = Number.isNaN(rawDispatched)
+                ? 0
+                : rawDispatched;
+
+              if (dispatched < 0) dispatched = 0;
+              if (dispatched > ordered) dispatched = ordered;
+
               const pending = Math.max(ordered - dispatched, 0);
 
               return (
@@ -273,10 +308,14 @@ export default function OrderDetailPage() {
                   <td>{ordered} pcs</td>
                   <td>
                     <input
-                      type="number"
-                      min={0}
-                      max={ordered}
-                      value={dispatched}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={
+                        l.dispatched_qty === ""
+                          ? ""
+                          : String(dispatched)
+                      }
                       onChange={(e) =>
                         handleDispatchedChange(l.id, e.target.value)
                       }
