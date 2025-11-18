@@ -1,5 +1,5 @@
-// app/layout.tsx
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -36,32 +36,32 @@ export default function RootLayout({
             <div>
               <div className="sidebar-section-title">Main</div>
               <div className="nav-list">
-                <button className="nav-item active" type="button">
+                <Link href="/" className="nav-item">
                   <span>Dashboard</span>
                   <span className="nav-item-dot" />
-                </button>
-                <button className="nav-item" type="button">
+                </Link>
+                <Link href="/orders/new" className="nav-item">
                   <span>Punch Order</span>
                   <span className="nav-item-dot" />
-                </button>
-                <button className="nav-item" type="button">
+                </Link>
+                <Link href="/orders" className="nav-item">
                   <span>View Orders</span>
                   <span className="nav-item-dot" />
-                </button>
+                </Link>
               </div>
             </div>
 
             <div>
               <div className="sidebar-section-title">Reference</div>
               <div className="nav-list">
-                <button className="nav-item" type="button">
+                <Link href="/parties" className="nav-item">
                   <span>Parties</span>
                   <span className="nav-item-dot" />
-                </button>
-                <button className="nav-item" type="button">
+                </Link>
+                <Link href="/items" className="nav-item">
                   <span>Items</span>
                   <span className="nav-item-dot" />
-                </button>
+                </Link>
               </div>
             </div>
 
