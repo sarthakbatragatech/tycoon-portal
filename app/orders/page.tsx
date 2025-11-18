@@ -59,7 +59,7 @@ export default function OrdersPage() {
     0
   );
   const totalValue = orders.reduce(
-    (sum, o) => sum + (Number(o.total_value ?? 0)),
+    (sum, o) => sum + Number(o.total_value ?? 0),
     0
   );
 
@@ -67,7 +67,7 @@ export default function OrdersPage() {
     <>
       <h1 className="section-title">View Orders</h1>
       <p className="section-subtitle">
-        Latest Tycoon orders from your Supabase database.
+        Tap an order code or &ldquo;View details&rdquo; to open the full order.
       </p>
 
       <div className="card-grid" style={{ marginBottom: 18 }}>
@@ -107,7 +107,7 @@ export default function OrdersPage() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "24%" }}>Order Code</th>
+              <th style={{ width: "28%" }}>Order (tap to open)</th>
               <th>Party</th>
               <th>Date</th>
               <th>Qty</th>
@@ -134,11 +134,34 @@ export default function OrdersPage() {
                     <Link
                       href={`/orders/${o.id}`}
                       style={{
+                        display: "inline-flex",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #333",
                         textDecoration: "none",
                         color: "#f5f5f5",
                       }}
                     >
-                      {displayCode}
+                      <span
+                        style={{
+                          fontSize: 13,
+                          letterSpacing: 0.4,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {displayCode}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          opacity: 0.7,
+                          marginTop: 2,
+                        }}
+                      >
+                        View details ↗
+                      </span>
                     </Link>
                   </td>
                   <td>
@@ -154,8 +177,7 @@ export default function OrdersPage() {
                     <span className="badge">{statusLabel}</span>
                   </td>
                 </tr>
-              );
-            })}
+            )}
 
             {!loading && orders.length === 0 && (
               <tr>
