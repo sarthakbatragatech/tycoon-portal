@@ -177,7 +177,8 @@ export default function OrdersPage() {
                     <span className="badge">{statusLabel}</span>
                   </td>
                 </tr>
-            )}
+              );
+            })}
 
             {!loading && orders.length === 0 && (
               <tr>
