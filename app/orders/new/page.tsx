@@ -62,8 +62,18 @@ export default function PunchOrderPage() {
         if (l.lineId !== id) return l;
 
         if (field === "qty") {
-          const num = value === "" ? "" : Number(value);
-          return { ...l, qty: Number.isNaN(num) ? "" : num };
+          // Allow completely empty
+          if (value.trim() === "") {
+            return { ...l, qty: "" };
+          }
+
+          // Only allow numbers 0+
+          const num = Number(value);
+          if (Number.isNaN(num) || num < 0) {
+            return { ...l, qty: "" };
+          }
+
+          return { ...l, qty: num };
         }
 
         return { ...l, itemId: value };
@@ -84,7 +94,7 @@ export default function PunchOrderPage() {
 
   const withDetails = lines.map((l) => {
     const item = items.find((i) => i.id === l.itemId);
-    const qty = typeof l.qty === "number" ? l.qty : 0;
+    const qty = l.qty === "" ? 0 : Number(l.qty);
     const rate = item?.dealer_rate ?? 0;
     const total = rate * qty;
 
