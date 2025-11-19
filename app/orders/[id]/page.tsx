@@ -33,6 +33,8 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [expectedDispatch, setExpectedDispatch] = useState("");
+  const [savingExpectedDate, setSavingExpectedDate] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -79,6 +81,7 @@ export default function OrderDetailPage() {
       setOrder(null);
     } else {
       setOrder(data);
+      setExpectedDispatch(data.expected_dispatch_date || "");
     }
 
     setLoading(false);
@@ -188,6 +191,35 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function saveExpectedDispatchDate() {
+    if (!order) return;
+    setSavingExpectedDate(true);
+
+    try {
+      const value =
+        expectedDispatch && expectedDispatch.trim() !== ""
+          ? expectedDispatch
+          : null;
+
+      const { error } = await supabase
+        .from("orders")
+        .update({ expected_dispatch_date: value })
+        .eq("id", order.id);
+
+      if (error) {
+        console.error("Error updating expected dispatch date", error);
+        alert("Error updating expected dispatch date: " + error.message);
+        return;
+      }
+
+      // keep local order in sync
+      setOrder({ ...order, expected_dispatch_date: value });
+      alert("Expected dispatch date updated.");
+    } finally {
+      setSavingExpectedDate(false);
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -240,6 +272,19 @@ export default function OrderDetailPage() {
     totalOrdered > 0
       ? Math.round((totalDispatched / totalOrdered) * 100)
       : 0;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let isOverdue = false;
+  if (order?.expected_dispatch_date) {
+    const ed = new Date(order.expected_dispatch_date);
+    ed.setHours(0, 0, 0, 0);
+    const st = (order.status || "pending").toLowerCase();
+    if (ed < today && st !== "dispatched") {
+      isOverdue = true;
+    }
+  }
 
   return (
     <>
@@ -298,13 +343,97 @@ export default function OrderDetailPage() {
 
         <div className="card">
           <div className="card-label">Dates</div>
-          <div className="card-value" style={{ fontSize: 16 }}>
-            {order.order_date}
+
+          {/* Order date (read-only) */}
+          <div
+            className="card-meta"
+            style={{ fontSize: 12, marginBottom: 6 }}
+          >
+            Order date:&nbsp;
+            {order.order_date
+              ? new Date(order.order_date).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "2-digit",
+                })
+              : "Not set"}
           </div>
-          <div className="card-meta">
-            {order.expected_dispatch_date
-              ? `Expected: ${order.expected_dispatch_date}`
-              : "Expected dispatch not set"}
+
+          {/* Expected dispatch: editable */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              fontSize: 12,
+            }}
+          >
+            <span style={{ opacity: 0.8 }}>Expected dispatch date</span>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
+              <input
+                type="date"
+                value={expectedDispatch}
+                onChange={(e) => setExpectedDispatch(e.target.value)}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "#050505",
+                  color: "#f5f5f5",
+                  fontSize: 12,
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={saveExpectedDispatchDate}
+                disabled={savingExpectedDate}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #f5f5f5",
+                  background: savingExpectedDate ? "#111827" : "#f5f5f5",
+                  color: savingExpectedDate ? "#9ca3af" : "#000",
+                  fontSize: 11,
+                  cursor: savingExpectedDate ? "default" : "pointer",
+                }}
+              >
+                {savingExpectedDate ? "Saving…" : "Save"}
+              </button>
+
+              {order.expected_dispatch_date && (
+                <span style={{ opacity: 0.75 }}>
+                  Current:{" "}
+                  {new Date(order.expected_dispatch_date).toLocaleDateString(
+                    "en-IN",
+                    { day: "2-digit", month: "short", year: "2-digit" }
+                  )}
+                </span>
+              )}
+
+              {isOverdue && (
+                <span
+                  style={{
+                    background: "#ef4444",
+                    color: "#fff",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    fontSize: 10,
+                    fontWeight: 600,
+                  }}
+                >
+                  Overdue
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
