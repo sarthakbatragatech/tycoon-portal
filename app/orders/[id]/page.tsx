@@ -16,10 +16,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft" },
-  { value: "submitted", label: "Submitted" },
-  { value: "in_production", label: "In Production" },
+  { value: "pending", label: "Pending" },
+  { value: "in_production", label: "In production" },
   { value: "packed", label: "Packed" },
+  { value: "partially_dispatched", label: "Partially dispatched" },
   { value: "dispatched", label: "Dispatched" },
   { value: "cancelled", label: "Cancelled" },
 ];
@@ -273,8 +273,8 @@ export default function OrderDetailPage() {
                 }}
               >
                 {STATUS_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>

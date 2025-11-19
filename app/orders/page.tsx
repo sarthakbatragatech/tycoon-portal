@@ -6,6 +6,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+// Shared status options
+const STATUS_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "in_production", label: "In production" },
+  { value: "packed", label: "Packed" },
+  { value: "partially_dispatched", label: "Partially dispatched" },
+  { value: "dispatched", label: "Dispatched" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
 type OrderWithRelations = {
   id: string;
   order_code: string | null;
@@ -21,6 +31,7 @@ type EnhancedOrder = {
   id: string;
   orderCode: string;
   orderDateLabel: string;
+  orderDateRaw: string | null;
   partyName: string;
   partyCity: string;
   status: string;
@@ -49,6 +60,10 @@ export default function OrdersPage() {
 
   // Search (party name + item name only)
   const [searchQuery, setSearchQuery] = useState("");
+
+  // DATE FILTERS (A)
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     loadOrders();
@@ -96,7 +111,73 @@ export default function OrdersPage() {
     setExpandedOrderId((current) => (current === orderId ? null : orderId));
   }
 
-  // Build rich objects per order
+  // Update order status from list
+  async function updateOrderStatus(orderId: string, newStatus: string) {
+    // Optimistic update
+    setOrders((prev) =>
+      (prev || []).map((o) =>
+        o.id === orderId ? { ...o, status: newStatus } : o
+      )
+    );
+
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: newStatus })
+      .eq("id", orderId);
+
+    if (error) {
+      console.error("Error updating order status", error);
+      alert("Error updating status. Please try again.");
+      // Reload to revert
+      loadOrders();
+    }
+  }
+
+  // DATE QUICK RANGE HELPER (B)
+  function setQuickRange(
+    mode: "all" | "thisMonth" | "lastMonth" | "last90"
+  ) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (mode === "all") {
+      setDateFrom("");
+      setDateTo("");
+      return;
+    }
+
+    if (mode === "thisMonth") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setDateFrom(from.toISOString().slice(0, 10));
+      setDateTo(today.toISOString().slice(0, 10));
+      return;
+    }
+
+    if (mode === "lastMonth") {
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const firstThisMonth = new Date(year, month, 1);
+      const lastMonthEnd = new Date(firstThisMonth.getTime() - 1);
+      const lastMonthStart = new Date(
+        lastMonthEnd.getFullYear(),
+        lastMonthEnd.getMonth(),
+        1
+      );
+      setDateFrom(lastMonthStart.toISOString().slice(0, 10));
+      setDateTo(lastMonthEnd.toISOString().slice(0, 10));
+      return;
+    }
+
+    if (mode === "last90") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 89);
+      setDateFrom(from.toISOString().slice(0, 10));
+      setDateTo(today.toISOString().slice(0, 10));
+      return;
+    }
+  }
+
+  // Build rich objects per order (no date filter here yet)
   const enhancedOrders: EnhancedOrder[] = useMemo(() => {
     if (!orders || orders.length === 0) return [];
 
@@ -119,7 +200,6 @@ export default function OrdersPage() {
             : itemRel || null;
 
         const itemName = (item?.name || "Unknown item") as string;
-
         const ordered = (l as any).qty ?? 0;
 
         const dispatchedRaw = (l as any).dispatched_qty ?? 0;
@@ -153,7 +233,8 @@ export default function OrdersPage() {
           ? Math.round((dispatchedTotal / orderedTotal) * 100)
           : 0;
 
-      const date = o.order_date ? new Date(o.order_date) : null;
+      const rawDateStr = o.order_date;
+      const date = rawDateStr ? new Date(rawDateStr) : null;
       const orderDateLabel = date
         ? date.toLocaleDateString("en-IN", {
             day: "2-digit",
@@ -172,6 +253,7 @@ export default function OrdersPage() {
         id: o.id,
         orderCode,
         orderDateLabel,
+        orderDateRaw: rawDateStr || null,
         partyName: (party?.name || "Unknown party") as string,
         partyCity: (party?.city || "") as string,
         status: (o.status || "pending") as string,
@@ -186,9 +268,32 @@ export default function OrdersPage() {
     });
   }, [orders]);
 
-  // Apply filters + search → final list to show
+  // Apply date filter + status filter + fulfilment filter + search (C)
   const visibleOrders = useMemo(() => {
     let list = [...enhancedOrders];
+
+    // DATE FILTER (same logic as dashboard)
+    if (dateFrom || dateTo) {
+      const fromDate = dateFrom ? new Date(dateFrom) : null;
+      const toDate = dateTo ? new Date(dateTo) : null;
+      let endOfTo: Date | null = null;
+
+      if (toDate) {
+        endOfTo = new Date(toDate);
+        endOfTo.setHours(23, 59, 59, 999);
+      }
+
+      list = list.filter((o) => {
+        if (!o.orderDateRaw) return false;
+        const od = new Date(o.orderDateRaw);
+        if (Number.isNaN(od.getTime())) return false;
+
+        if (fromDate && od < fromDate) return false;
+        if (endOfTo && od > endOfTo) return false;
+
+        return true;
+      });
+    }
 
     // Status filter
     if (statusFilter !== "all") {
@@ -218,7 +323,6 @@ export default function OrdersPage() {
 
       list = list.filter((o) => {
         const party = o.partyName?.toLowerCase() || "";
-
         const itemMatch = o.lines.some((line) =>
           line.itemName.toLowerCase().includes(q)
         );
@@ -228,7 +332,14 @@ export default function OrdersPage() {
     }
 
     return list;
-  }, [enhancedOrders, statusFilter, fulfilmentFilter, searchQuery]);
+  }, [
+    enhancedOrders,
+    statusFilter,
+    fulfilmentFilter,
+    searchQuery,
+    dateFrom,
+    dateTo,
+  ]);
 
   function fulfilmentColour(percent: number): string {
     if (percent >= 100) return "#22c55e";
@@ -264,7 +375,144 @@ export default function OrdersPage() {
         />
       </div>
 
-      {/* FILTER BAR */}
+      {/* DATE FILTERS (UI) */}
+      <div
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          fontSize: 12,
+        }}
+      >
+        {/* Quick ranges */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ opacity: 0.8 }}>Quick range:</span>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("all")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            All time
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("thisMonth")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            This month
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("lastMonth")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            Last month
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("last90")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            Last 90 days
+          </button>
+        </div>
+
+        {/* Manual date inputs */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ opacity: 0.8 }}>Filter by order date:</span>
+
+          <div
+            style={{ display: "flex", gap: 6, alignItems: "center" }}
+          >
+            <span style={{ opacity: 0.7 }}>From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "#050505",
+                color: "#f5f5f5",
+              }}
+            />
+          </div>
+
+          <div
+            style={{ display: "flex", gap: 6, alignItems: "center" }}
+          >
+            <span style={{ opacity: 0.7 }}>To</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "#050505",
+                color: "#f5f5f5",
+              }}
+            />
+          </div>
+
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+              }}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "transparent",
+                color: "#f5f5f5",
+                fontSize: 11,
+              }}
+            >
+              Clear date
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* FILTER BAR (status + fulfilment) */}
       <div
         style={{
           marginBottom: 10,
@@ -293,10 +541,11 @@ export default function OrdersPage() {
             }}
           >
             <option value="all">All</option>
-            <option value="draft">Draft</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="in_production">In production</option>
-            <option value="dispatched">Dispatched</option>
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -354,8 +603,8 @@ export default function OrdersPage() {
         <div className="card">
           <div className="card-label">No orders yet</div>
           <div style={{ fontSize: 13, opacity: 0.8 }}>
-            Punch an order from the <strong>Punch Order</strong> page to see it
-            here.
+            Punch an order from the <strong>Punch Order</strong> page to
+            see it here.
           </div>
         </div>
       )}
@@ -364,9 +613,12 @@ export default function OrdersPage() {
         enhancedOrders.length > 0 &&
         visibleOrders.length === 0 && (
           <div className="card">
-            <div className="card-label">No orders match these filters</div>
+            <div className="card-label">
+              No orders match the current filters/search
+            </div>
             <div style={{ fontSize: 13, opacity: 0.8 }}>
-              Try changing or clearing the search/filters.
+              Try changing the date range, status, fulfilment, or search
+              text.
             </div>
           </div>
         )}
@@ -469,15 +721,41 @@ export default function OrdersPage() {
                     textAlign: "right",
                     fontSize: 11,
                     opacity: 0.9,
-                    minWidth: 110,
+                    minWidth: 140,
                   }}
                 >
                   <div>
                     {order.totalQty} pcs · ₹{" "}
-                      {order.totalValue.toLocaleString("en-IN")}
+                    {order.totalValue.toLocaleString("en-IN")}
                   </div>
-                  <div style={{ textTransform: "capitalize" }}>
-                    Status: {order.status || "pending"}
+
+                  <div style={{ marginTop: 4 }}>
+                    <span
+                      style={{ marginRight: 4, opacity: 0.8 }}
+                    >
+                      Status:
+                    </span>
+                    <select
+                      value={order.status || "pending"}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        updateOrderStatus(order.id, e.target.value)
+                      }
+                      style={{
+                        padding: "2px 6px",
+                        borderRadius: 999,
+                        border: "1px solid #333",
+                        background: "#050505",
+                        color: "#f5f5f5",
+                        fontSize: 11,
+                      }}
+                    >
+                      {STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </button>
