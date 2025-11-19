@@ -20,6 +20,7 @@ type OrderWithRelations = {
   id: string;
   order_code: string | null;
   order_date: string | null;
+  expected_dispatch_date: string | null;
   status: string | null;
   total_qty: number | null;
   total_value: number | null;
@@ -32,6 +33,8 @@ type EnhancedOrder = {
   orderCode: string;
   orderDateLabel: string;
   orderDateRaw: string | null;
+  expectedDispatchLabel: string;
+  isOverdue: boolean;
   partyName: string;
   partyCity: string;
   status: string;
@@ -79,6 +82,7 @@ export default function OrdersPage() {
         id,
         order_code,
         order_date,
+        expected_dispatch_date,
         status,
         total_qty,
         total_value,
@@ -132,12 +136,14 @@ export default function OrdersPage() {
       loadOrders();
     }
   }
+
   function formatDateLocal(d: Date): string {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   }
+
   // DATE QUICK RANGE HELPER (B)
   function setQuickRange(
     mode: "all" | "thisMonth" | "lastMonth" | "last90"
@@ -182,9 +188,12 @@ export default function OrdersPage() {
     }
   }
 
-  // Build rich objects per order (no date filter here yet)
+  // Build rich objects per order
   const enhancedOrders: EnhancedOrder[] = useMemo(() => {
     if (!orders || orders.length === 0) return [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     return orders.map((o) => {
       // Party: Supabase may return object or array
@@ -254,11 +263,36 @@ export default function OrdersPage() {
           ? (o.order_code as string)
           : o.id.slice(0, 8);
 
+      // Expected dispatch
+      const expectedRaw = (o as any).expected_dispatch_date as
+        | string
+        | null;
+      const expectedDate = expectedRaw ? new Date(expectedRaw) : null;
+
+      const expectedDispatchLabel = expectedDate
+        ? expectedDate.toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+          })
+        : "Not set";
+
+      let isOverdue = false;
+      if (expectedDate) {
+        const ed = new Date(expectedDate);
+        ed.setHours(0, 0, 0, 0);
+        const st = (o.status || "pending").toLowerCase();
+        if (ed < today && st !== "dispatched") {
+          isOverdue = true;
+        }
+      }
+
       return {
         id: o.id,
         orderCode,
         orderDateLabel,
         orderDateRaw: rawDateStr || null,
+        expectedDispatchLabel,
+        isOverdue,
         partyName: (party?.name || "Unknown party") as string,
         partyCity: (party?.city || "") as string,
         status: (o.status || "pending") as string,
@@ -717,6 +751,37 @@ export default function OrdersPage() {
                       <span>Order #{order.orderCode}</span>
                       <span>·</span>
                       <span>{order.orderDateLabel}</span>
+                    </div>
+
+                    {/* Expected dispatch + overdue */}
+                    <div
+                      style={{
+                        fontSize: 11,
+                        opacity: 0.9,
+                        marginTop: 4,
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span>
+                        Expected: {order.expectedDispatchLabel}
+                      </span>
+                      {order.isOverdue && (
+                        <span
+                          style={{
+                            background: "#ef4444",
+                            color: "#fff",
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            fontSize: 10,
+                            fontWeight: 600,
+                          }}
+                        >
+                          Overdue
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
