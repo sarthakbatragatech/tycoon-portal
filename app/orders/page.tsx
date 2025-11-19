@@ -13,12 +13,8 @@ type OrderWithRelations = {
   status: string | null;
   total_qty: number | null;
   total_value: number | null;
-  parties?: { name: string | null; city: string | null }[] | null;
-  order_lines?: {
-    qty: number | null;
-    dispatched_qty: number | string | null;
-    items?: { name: string | null }[] | null;
-  }[];
+  parties?: any; // Supabase may return object or array
+  order_lines?: any[];
 };
 
 type EnhancedOrder = {
@@ -27,7 +23,6 @@ type EnhancedOrder = {
   orderDateLabel: string;
   partyName: string;
   partyCity: string;
-  stakeholderName: string;
   status: string;
   totalQty: number;
   totalValue: number;
@@ -55,35 +50,33 @@ export default function OrdersPage() {
   async function loadOrders() {
     setLoading(true);
 
-const { data, error } = await supabase
-  .from("orders")
-  .select(`
-    id,
-    order_code
-    order_date,
-    status,
-    total_qty,
-    total_value,
-    party_id,
-    parties (
-      id,
-      name,
-      city
-    ),
-    order_lines (
-      qty,
-      dispatched_qty,
-      item_id,
-      items (
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        `
         id,
-        name
+        order_code,
+        order_date,
+        status,
+        total_qty,
+        total_value,
+        parties (
+          name,
+          city
+        ),
+        order_lines (
+          qty,
+          dispatched_qt,
+          items (
+            name
+          )
+        )
+      `
       )
-    )
-  `)
-  .order("order_date", { ascending: false });
+      .order("order_date", { ascending: false });
 
     if (error) {
-      console.error("Error loading orders", error);
+      console.error("🚨 Supabase error loading orders:", error);
       setOrders([]);
     } else {
       setOrders((data || []) as any);
@@ -100,16 +93,17 @@ const { data, error } = await supabase
     if (!orders || orders.length === 0) return [];
 
     return orders.map((o) => {
+      // --- party: handle object or array shape ---
       const partyRel: any = (o as any).parties;
-
       const party =
         partyRel && Array.isArray(partyRel) && partyRel.length > 0
           ? partyRel[0]
           : partyRel || null;
-          
-      const lines = o.order_lines || [];
 
-      const lineSummaries = lines.map((l) => {
+      // --- lines: handle items object/array + dispatched_qt ---
+      const linesRaw: any[] = (o as any).order_lines || [];
+
+      const lineSummaries = linesRaw.map((l) => {
         const itemRel: any = (l as any).items;
 
         const item =
@@ -118,13 +112,12 @@ const { data, error } = await supabase
             : itemRel || null;
 
         const itemName = (item?.name || "Unknown item") as string;
-        const ordered = l.qty ?? 0;
 
-        const raw =
-          l.dispatched_qty === "" || l.dispatched_qty == null
-            ? 0
-            : Number(l.dispatched_qty);
-        let dispatched = Number.isNaN(raw) ? 0 : raw;
+        const ordered = (l as any).qty ?? 0;
+
+        const dispatchedRaw = (l as any).dispatched_qt ?? 0;
+        let dispatched = Number(dispatchedRaw);
+        if (Number.isNaN(dispatched)) dispatched = 0;
         if (dispatched < 0) dispatched = 0;
         if (dispatched > ordered) dispatched = ordered;
 
@@ -162,11 +155,11 @@ const { data, error } = await supabase
           })
         : "No date";
 
-      // Clean order code pulled from DB
       const orderCode =
-        o.order_code && o.order_code !== ""
-          ? o.order_code
-          : o.id.slice(0, 8); // fallback to short UUID if needed
+        (o.order_code && o.order_code !== "") ||
+        o.order_code === "0"
+          ? (o.order_code as string)
+          : o.id.slice(0, 8);
 
       return {
         id: o.id,
@@ -174,10 +167,9 @@ const { data, error } = await supabase
         orderDateLabel,
         partyName: (party?.name || "Unknown party") as string,
         partyCity: (party?.city || "") as string,
-        stakeholderName: "N/A",
         status: (o.status || "pending") as string,
         totalQty: o.total_qty ?? orderedTotal,
-        totalValue: o.total_value ?? 0,
+        totalValue: Number(o.total_value ?? 0),
         orderedTotal,
         dispatchedTotal,
         pendingTotal,
@@ -293,9 +285,7 @@ const { data, error } = await supabase
                       }}
                     >
                       {order.partyName}
-                      {order.partyCity
-                        ? ` · ${order.partyCity}`
-                        : ""}
+                      {order.partyCity ? ` · ${order.partyCity}` : ""}
                     </div>
                     <div
                       style={{
@@ -309,8 +299,6 @@ const { data, error } = await supabase
                       <span>Order #{order.orderCode}</span>
                       <span>·</span>
                       <span>{order.orderDateLabel}</span>
-                      <span>·</span>
-                      <span>By {order.stakeholderName}</span>
                     </div>
                   </div>
                 </div>
@@ -369,9 +357,7 @@ const { data, error } = await supabase
                     {order.dispatchedTotal}/{order.orderedTotal} pcs
                     dispatched
                   </span>
-                  <span>
-                    Pending: {order.pendingTotal} pcs
-                  </span>
+                  <span>Pending: {order.pendingTotal} pcs</span>
                 </div>
               </div>
 
