@@ -42,6 +42,8 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [fulfilmentFilter, setFulfilmentFilter] = useState("all");
 
   useEffect(() => {
     loadOrders();
@@ -179,6 +181,34 @@ export default function OrdersPage() {
     });
   }, [orders]);
 
+  const visibleOrders = useMemo(() => {
+    let list = [...enhancedOrders];
+
+    // Status filter
+    if (statusFilter !== "all") {
+      list = list.filter((o) => {
+        const st = (o.status || "pending").toLowerCase();
+        return st === statusFilter;
+      });
+    }
+
+    // Fulfilment filter
+    if (fulfilmentFilter !== "all") {
+      list = list.filter((o) => {
+        const p = o.fulfilmentPercent ?? 0;
+
+        if (fulfilmentFilter === "low") return p < 40;              
+        if (fulfilmentFilter === "medium") return p >= 40 && p < 75; 
+        if (fulfilmentFilter === "high") return p >= 75 && p < 100;  
+        if (fulfilmentFilter === "complete") return p === 100;       
+
+        return true;
+      });
+    }
+
+    return list;
+  }, [enhancedOrders, statusFilter, fulfilmentFilter]);
+
   function fulfilmentColour(percent: number): string {
     if (percent >= 100) return "#22c55e";
     if (percent >= 75) return "#4ade80";
@@ -211,7 +241,7 @@ export default function OrdersPage() {
       )}
 
       <div className="card-grid" style={{ flexDirection: "column", gap: 10 }}>
-        {enhancedOrders.map((order) => {
+        {visibleOrders.map((order) => {
           const expanded = expandedOrderId === order.id;
           const colour = fulfilmentColour(order.fulfilmentPercent);
           const barWidth = Math.max(
