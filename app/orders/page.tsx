@@ -53,29 +53,31 @@ export default function OrdersPage() {
   async function loadOrders() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select(
-        `
+const { data, error } = await supabase
+  .from("orders")
+  .select(`
+    id,
+    order_date,
+    status,
+    total_qty,
+    total_value,
+    party_id,
+    parties (
+      id,
+      name,
+      city
+    ),
+    order_lines (
+      qty,
+      dispatched_qty,
+      item_id,
+      items (
         id,
-        order_date,
-        status,
-        total_qty,
-        total_value,
-        parties (
-          name,
-          city
-        ),
-        order_lines (
-          qty,
-          dispatched_qty,
-          items (
-            name
-          )
-        )
-      `
+        name
       )
-      .order("order_date", { ascending: false });
+    )
+  `)
+  .order("order_date", { ascending: false });
 
     if (error) {
       console.error("Error loading orders", error);
