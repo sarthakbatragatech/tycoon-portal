@@ -272,7 +272,7 @@ export default function OrderDetailPage() {
                   fontSize: 11,
                 }}
               >
-                {STATUS_OPTIONS.map((s) => (
+                {STATUS_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
