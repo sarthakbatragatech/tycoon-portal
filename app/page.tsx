@@ -71,7 +71,7 @@ export default function DashboardPage() {
     itemPendingArray,
     categoryDemandArray,
     orderFulfillmentArray,
-    backlogTopItems,
+    backlogItemsRaw,
   } = useMemo(() => {
     const result = {
       totalOrders: 0,
@@ -81,7 +81,7 @@ export default function DashboardPage() {
       itemPendingArray: [] as any[],
       categoryDemandArray: [] as any[],
       orderFulfillmentArray: [] as any[],
-      backlogTopItems: [] as any[],
+      backlogItemsRaw: [] as any[],
     };
 
     if (!orders || orders.length === 0) return result;
@@ -130,27 +130,50 @@ export default function DashboardPage() {
 
         const pending = Math.max(ordered - dispatched, 0);
 
-        allLines.push({ itemName: name, category, ordered, dispatched, pending });
+        allLines.push({
+          itemName: name,
+          category,
+          ordered,
+          dispatched,
+          pending,
+        });
       }
     }
 
-    // Aggregate by item
+    // Aggregate by item (still tracking category, even if we don't show it in table)
     const byItem = new Map<
       string,
-      { ordered: number; dispatched: number; pending: number }
+      {
+        ordered: number;
+        dispatched: number;
+        pending: number;
+        category: string;
+      }
     >();
+
     for (const l of allLines) {
+      const catKey =
+        l.category && l.category.trim() !== ""
+          ? l.category
+          : "Uncategorised";
+
       if (!byItem.has(l.itemName)) {
         byItem.set(l.itemName, {
           ordered: 0,
           dispatched: 0,
           pending: 0,
+          category: catKey,
         });
       }
+
       const agg = byItem.get(l.itemName)!;
       agg.ordered += l.ordered;
       agg.dispatched += l.dispatched;
       agg.pending += l.pending;
+
+      if (agg.category === "Uncategorised" && catKey !== "Uncategorised") {
+        agg.category = catKey;
+      }
     }
 
     const itemArray = Array.from(byItem.entries()).map(
@@ -159,23 +182,19 @@ export default function DashboardPage() {
         ordered: agg.ordered,
         dispatched: agg.dispatched,
         pending: agg.pending,
+        category: agg.category,
       })
     );
 
-    // Top 12 by ordered
+    // Top 12 by ordered for the demand chart
     result.itemDemandArray = itemArray
       .filter((d) => d.ordered > 0)
       .sort((a, b) => b.ordered - a.ordered)
       .slice(0, 12);
 
-    // Top 12 by pending
-    result.itemPendingArray = itemArray
+    // Full backlog list (all items with pending > 0)
+    const backlogItemsRaw = itemArray
       .filter((d) => d.pending > 0)
-      .sort((a, b) => b.pending - a.pending)
-      .slice(0, 12);
-
-    result.backlogTopItems = result.itemPendingArray
-      .slice(0, 8)
       .map((d) => ({
         item: d.item,
         pending: d.pending,
@@ -185,6 +204,14 @@ export default function DashboardPage() {
             ? Math.round((d.pending / d.ordered) * 100)
             : 0,
       }));
+
+    result.backlogItemsRaw = backlogItemsRaw;
+
+    // Top 12 pending for the backlog chart
+    const backlogSortedForChart = [...backlogItemsRaw].sort(
+      (a, b) => b.pending - a.pending
+    );
+    result.itemPendingArray = backlogSortedForChart.slice(0, 12);
 
     // Aggregate by category
     const byCat = new Map<
@@ -261,6 +288,33 @@ export default function DashboardPage() {
 
     return result;
   }, [orders]);
+
+    // Backlog table controls
+  const [backlogSortBy, setBacklogSortBy] = useState<
+    "pending" | "pendingPercent" | "ordered"
+  >("pending");
+  const [backlogShowAll, setBacklogShowAll] = useState(false);
+
+  const backlogRows = useMemo(() => {
+    let rows = [...backlogItemsRaw];
+
+    rows.sort((a, b) => {
+      if (backlogSortBy === "pending") {
+        return b.pending - a.pending;
+      } else if (backlogSortBy === "pendingPercent") {
+        return (b.pendingPercent ?? 0) - (a.pendingPercent ?? 0);
+      } else {
+        // ordered
+        return b.ordered - a.ordered;
+      }
+    });
+
+    if (!backlogShowAll) {
+      rows = rows.slice(0, 8);
+    }
+
+    return rows;
+  }, [backlogItemsRaw, backlogSortBy, backlogShowAll]);
 
   // ---------- VEGA-LITE SPECS ----------
 
@@ -554,7 +608,67 @@ export default function DashboardPage() {
           <div className="card" style={{ marginBottom: 18 }}>
             <div className="card-label">Backlog Table · Pending by Item</div>
             <div className="card-meta">
-              Same data as the backlog chart, but in table form for exact planning.
+              Same data as the backlog chart, with sorting & quick filters.
+            </div>
+
+            {/* Controls: sort + show all */}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 8,
+                fontSize: 11,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ opacity: 0.7 }}>Sort by:</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[
+                    { key: "pending", label: "Pending qty" },
+                    { key: "pendingPercent", label: "Pending %" },
+                    { key: "ordered", label: "Total ordered" },
+                  ].map((opt) => {
+                    const active = backlogSortBy === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() =>
+                          setBacklogSortBy(opt.key as any)
+                        }
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: active ? "#f5f5f5" : "transparent",
+                          color: active ? "#000" : "#f5f5f5",
+                          fontSize: 11,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setBacklogShowAll((v) => !v)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "transparent",
+                  color: "#f5f5f5",
+                  fontSize: 11,
+                }}
+              >
+                {backlogShowAll ? "Show top 8" : "Show all items"}
+              </button>
             </div>
 
             <div className="table-wrapper" style={{ marginTop: 10 }}>
@@ -568,10 +682,10 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {backlogTopItems.length === 0 && (
+                  {backlogItemsRaw.length === 0 && (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         style={{
                           textAlign: "center",
                           padding: 10,
@@ -583,21 +697,58 @@ export default function DashboardPage() {
                     </tr>
                   )}
 
-                  {backlogTopItems.map((row) => {
+                  {backlogRows.map((row) => {
                     const pct = row.pendingPercent ?? 0;
-                    const isHigh = pct >= 50 && row.pending > 0;
+                    const barWidth = Math.max(
+                      4,
+                      Math.min(pct, 100)
+                    );
+                    const color =
+                      pct >= 75
+                        ? "#ef4444"
+                        : pct >= 40
+                        ? "#f59e0b"
+                        : "#22c55e";
 
                     return (
                       <tr key={row.item}>
                         <td>{row.item}</td>
                         <td>{row.pending} pcs</td>
-                        <td
-                          style={{
-                            color: isHigh ? "#ef4444" : "#e5e5e5",
-                            fontWeight: isHigh ? 600 : 400,
-                          }}
-                        >
-                          {pct}%
+                        <td>
+                          <div
+                            style={{
+                              position: "relative",
+                              width: "100%",
+                              background: "#050505",
+                              borderRadius: 999,
+                              overflow: "hidden",
+                              height: 16,
+                              border: "1px solid #222",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                width: `${barWidth}%`,
+                                background: color,
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: "relative",
+                                fontSize: 11,
+                                textAlign: "center",
+                                fontWeight: 600,
+                                color: "#f9fafb",
+                                lineHeight: "16px",
+                              }}
+                            >
+                              {pct}%
+                            </div>
+                          </div>
                         </td>
                         <td>{row.ordered} pcs</td>
                       </tr>
