@@ -2,7 +2,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type UIItem = {
@@ -16,13 +16,13 @@ type UIItem = {
 
 export default function ItemsPage() {
   const [items, setItems] = useState<UIItem[]>([]);
-  const [categorySuggestions, setCategorySuggestions] = useState<string[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
 
   // New item form state
   const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState("");
+  const [newCategory, setNewCategory] = useState(""); // dropdown, starts empty
   const [newRate, setNewRate] = useState("");
   const [newUnit, setNewUnit] = useState("pcs");
   const [adding, setAdding] = useState(false);
@@ -42,34 +42,35 @@ export default function ItemsPage() {
     if (error) {
       console.error("Error loading items", error);
       setItems([]);
-      setCategorySuggestions([]);
-    } else {
-      const mapped: UIItem[] = (data || []).map((i: any) => ({
-        id: i.id,
-        name: i.name,
-        category: i.category || "",
-        unit: i.unit || "pcs",
-        is_active: i.is_active ?? true,
-        dealer_rate:
-          i.dealer_rate !== null && i.dealer_rate !== undefined
-            ? String(i.dealer_rate)
-            : "",
-      }));
-      setItems(mapped);
-
-      // Build unique category list from DB
-      const cats = Array.from(
-        new Set(
-          (data || [])
-            .map((i: any) => i.category)
-            .filter((c: any) => c && typeof c === "string")
-        )
-      ).sort((a: any, b: any) =>
-        String(a).localeCompare(String(b), "en", { sensitivity: "base" })
-      );
-      setCategorySuggestions(cats as string[]);
-
+      setCategoryOptions([]);
+      setLoading(false);
+      return;
     }
+
+    const mapped: UIItem[] = (data || []).map((i: any) => ({
+      id: i.id,
+      name: i.name,
+      category: i.category || "",
+      unit: i.unit || "pcs",
+      is_active: i.is_active ?? true,
+      dealer_rate:
+        i.dealer_rate !== null && i.dealer_rate !== undefined
+          ? String(i.dealer_rate)
+          : "",
+    }));
+    setItems(mapped);
+
+    // Build unique category list from DB (non-empty only)
+    const cats = Array.from(
+      new Set(
+        (data || [])
+          .map((i: any) => i.category)
+          .filter((c: any) => c && typeof c === "string")
+      )
+    ).sort((a: any, b: any) =>
+      String(a).localeCompare(String(b), "en", { sensitivity: "base" })
+    );
+    setCategoryOptions(cats as string[]);
 
     setLoading(false);
   }
@@ -135,7 +136,7 @@ export default function ItemsPage() {
       return;
     }
 
-    const categoryStr = item.category.trim();
+    const categoryStr = item.category.trim(); // from dropdown
 
     setSavingItemId(id);
 
@@ -156,7 +157,7 @@ export default function ItemsPage() {
 
     setSavingItemId(null);
 
-    // Refresh suggestions if category changed to a new one
+    // Reload to refresh categories if needed
     await loadItems();
   }
 
@@ -177,7 +178,7 @@ export default function ItemsPage() {
       return;
     }
 
-    const categoryStr = newCategory.trim();
+    const categoryStr = newCategory.trim(); // from dropdown; can be ""
 
     setAdding(true);
 
@@ -216,24 +217,37 @@ export default function ItemsPage() {
 
     setItems((prev) => [...prev, newItem]);
 
-    // If category is new, add to suggestions
+    // If category is new (added elsewhere), we'll pick it up on next load
     if (
       newItem.category &&
-      !categorySuggestions.includes(newItem.category)
+      !categoryOptions.includes(newItem.category)
     ) {
-      setCategorySuggestions((prev) =>
+      setCategoryOptions((prev) =>
         [...prev, newItem.category].sort((a, b) =>
           a.localeCompare(b, "en", { sensitivity: "base" })
         )
       );
     }
 
-    // Clear form (keep category to speed up adding similar items)
+    // Clear form (keep selected category, so adding similar items is fast)
     setNewName("");
     setNewRate("");
     setNewUnit("pcs");
     setAdding(false);
   }
+
+  // --- Group items by category for table ---
+
+  const grouped = new Map<string, UIItem[]>();
+  for (const it of items) {
+    const key = it.category && it.category.trim() !== "" ? it.category : "Uncategorised";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(it);
+  }
+
+  const sortedCategories = Array.from(grouped.keys()).sort((a, b) =>
+    a === "Uncategorised" ? 1 : b === "Uncategorised" ? -1 : a.localeCompare(b, "en", { sensitivity: "base" })
+  );
 
   return (
     <>
@@ -271,30 +285,27 @@ export default function ItemsPage() {
             }}
           />
 
-          {/* Category: free text with suggestions from DB */}
-          <div style={{ position: "relative" }}>
-            <input
-              type="text"
-              list="item-categories"
-              placeholder="Category (jeep, bike, spare...)"
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
-                fontSize: 12,
-              }}
-            />
-            <datalist id="item-categories">
-              {categorySuggestions.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-          </div>
+          {/* Category DROPDOWN (from DB) */}
+          <select
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              fontSize: 12,
+            }}
+          >
+            <option value="">No category</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
 
           <input
             type="text"
@@ -342,7 +353,7 @@ export default function ItemsPage() {
         </div>
       </div>
 
-      {/* EXISTING ITEMS TABLE */}
+      {/* EXISTING ITEMS TABLE (grouped by category) */}
       <div className="table-wrapper">
         <div className="table-header">
           <div className="table-title">All Items</div>
@@ -351,7 +362,9 @@ export default function ItemsPage() {
               ? "Loading..."
               : items.length === 0
               ? "No items yet"
-              : `Showing ${items.length} items`}
+              : `Showing ${items.length} items in ${
+                  sortedCategories.length
+                } categor${sortedCategories.length === 1 ? "y" : "ies"}`}
           </div>
         </div>
 
@@ -367,84 +380,117 @@ export default function ItemsPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td>{it.name}</td>
-                <td>
-                  <input
-                    type="text"
-                    list="item-categories"
-                    value={it.category}
-                    onChange={(e) =>
-                      updateItemField(it.id, "category", e.target.value)
-                    }
-                    style={{
-                      width: "100%",
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      border: "1px solid #333",
-                      background: "#050505",
-                      color: "#f5f5f5",
-                      fontSize: 12,
-                    }}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={it.dealer_rate}
-                    onChange={(e) =>
-                      updateItemRate(it.id, e.target.value)
-                    }
-                    style={{
-                      width: 90,
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      border: "1px solid #333",
-                      background: "#050505",
-                      color: "#f5f5f5",
-                      fontSize: 12,
-                    }}
-                  />
-                </td>
-                <td>{it.unit || "pcs"}</td>
-                <td>
-                  <button
-                    type="button"
-                    onClick={() => toggleActive(it.id, it.is_active)}
-                    disabled={savingItemId === it.id}
-                    style={{
-                      padding: "3px 10px",
-                      borderRadius: 999,
-                      border: "1px solid #333",
-                      background: it.is_active ? "#16a34a" : "transparent",
-                      color: it.is_active ? "#000" : "#f5f5f5",
-                      fontSize: 11,
-                    }}
-                  >
-                    {it.is_active ? "Active" : "Inactive"}
-                  </button>
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    onClick={() => saveItem(it.id)}
-                    disabled={savingItemId === it.id}
-                    style={{
-                      padding: "4px 12px",
-                      borderRadius: 999,
-                      border: "1px solid #fff",
-                      background: "transparent",
-                      color: "#fff",
-                      fontSize: 11,
-                    }}
-                  >
-                    {savingItemId === it.id ? "Saving…" : "Save"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {sortedCategories.map((cat) => {
+              const groupItems = grouped.get(cat) || [];
+              return (
+                <Fragment key={cat}>
+                  {/* Category subheading row */}
+                  <tr>
+                    <td
+                      colSpan={6}
+                      style={{
+                        padding: "8px 6px",
+                        fontSize: 12,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.8,
+                        opacity: 0.75,
+                        borderBottom: "1px solid #222",
+                      }}
+                    >
+                      {cat}
+                    </td>
+                  </tr>
+
+                  {groupItems.map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.name}</td>
+                      <td>
+                        <select
+                          value={it.category || ""}
+                          onChange={(e) =>
+                            updateItemField(it.id, "category", e.target.value)
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: "#050505",
+                            color: "#f5f5f5",
+                            fontSize: 12,
+                          }}
+                        >
+                          <option value="">No category</option>
+                          {categoryOptions.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value{it.dealer_rate}
+                          onChange={(e) =>
+                            updateItemRate(it.id, e.target.value)
+                          }
+                          style={{
+                            width: 90,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: "#050505",
+                            color: "#f5f5f5",
+                            fontSize: 12,
+                          }}
+                        />
+                      </td>
+                      <td>{it.unit || "pcs"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleActive(it.id, it.is_active)
+                          }
+                          disabled={savingItemId === it.id}
+                          style={{
+                            padding: "3px 10px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: it.is_active
+                              ? "#16a34a"
+                              : "transparent",
+                            color: it.is_active ? "#000" : "#f5f5f5",
+                            fontSize: 11,
+                          }}
+                        >
+                          {it.is_active ? "Active" : "Inactive"}
+                        </button>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => saveItem(it.id)}
+                          disabled={savingItemId === it.id}
+                          style={{
+                            padding: "4px 12px",
+                            borderRadius: 999,
+                            border: "1px solid #fff",
+                            background: "transparent",
+                            color: "#fff",
+                            fontSize: 11,
+                          }}
+                        >
+                          {savingItemId === it.id ? "Saving…" : "Save"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
 
             {!loading && items.length === 0 && (
               <tr>
