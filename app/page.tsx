@@ -2,9 +2,72 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import VegaLiteChart from "@/components/VegaLiteChart";
+
+// ---------- INLINE VEGA-LITE CHART COMPONENT ----------
+
+type VegaLiteSpec = any;
+
+function VegaLiteChart({
+  spec,
+  height = 260,
+}: {
+  spec: VegaLiteSpec;
+  height?: number;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let view: any;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const embedModule = await import("vega-embed");
+        const embed = embedModule.default;
+
+        if (!containerRef.current || cancelled) return;
+
+        const result = await embed(
+          containerRef.current,
+          {
+            ...spec,
+            height,
+          },
+          {
+            actions: {
+              export: true,
+              source: false,
+              editor: true,
+            },
+            tooltip: true,
+          }
+        );
+
+        view = result.view;
+      } catch (err) {
+        console.error("Error rendering VegaLite chart", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (view) {
+        view.finalize?.();
+      }
+    };
+  }, [spec, height]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ width: "100%", minHeight: height + 30 }}
+    />
+  );
+}
+
+// ---------- TYPES ----------
 
 type OrderWithLines = {
   id: string;
@@ -19,54 +82,21 @@ type OrderWithLines = {
   }[];
 };
 
+// ---------- DASHBOARD PAGE ----------
+
 export default function DashboardPage() {
   const [orders, setOrders] = useState<OrderWithLines[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Date filter (YYYY-MM-DD from <input type="date" />)
+  // Date filter (YYYY-MM-DD)
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
-  function setQuickRange(mode: "all" | "thisMonth" | "lastMonth" | "last90") {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (mode === "all") {
-      setDateFrom("");
-      setDateTo("");
-      return;
-    }
-
-    if (mode === "thisMonth") {
-      const from = new Date(today.getFullYear(), today.getMonth(), 1);
-      setDateFrom(from.toISOString().slice(0, 10));
-      setDateTo(today.toISOString().slice(0, 10));
-      return;
-    }
-
-    if (mode === "lastMonth") {
-      const year = today.getFullYear();
-      const month = today.getMonth(); // 0-based
-      const firstThisMonth = new Date(year, month, 1);
-      const lastMonthEnd = new Date(firstThisMonth.getTime() - 1); // last day of last month
-      const lastMonthStart = new Date(
-        lastMonthEnd.getFullYear(),
-        lastMonthEnd.getMonth(),
-        1
-      );
-      setDateFrom(lastMonthStart.toISOString().slice(0, 10));
-      setDateTo(lastMonthEnd.toISOString().slice(0, 10));
-      return;
-    }
-
-    if (mode === "last90") {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 89); // count today as day 90
-      setDateFrom(from.toISOString().slice(0, 10));
-      setDateTo(today.toISOString().slice(0, 10));
-      return;
-    }
-  }  
+  // Backlog table controls
+  const [backlogSortBy, setBacklogSortBy] = useState<
+    "pending" | "pendingPercent" | "ordered"
+  >("pending");
+  const [backlogShowAll, setBacklogShowAll] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -106,7 +136,50 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  // ---------- DERIVED STATS ----------
+  function setQuickRange(
+    mode: "all" | "thisMonth" | "lastMonth" | "last90"
+  ) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (mode === "all") {
+      setDateFrom("");
+      setDateTo("");
+      return;
+    }
+
+    if (mode === "thisMonth") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setDateFrom(from.toISOString().slice(0, 10));
+      setDateTo(today.toISOString().slice(0, 10));
+      return;
+    }
+
+    if (mode === "lastMonth") {
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const firstThisMonth = new Date(year, month, 1);
+      const lastMonthEnd = new Date(firstThisMonth.getTime() - 1);
+      const lastMonthStart = new Date(
+        lastMonthEnd.getFullYear(),
+        lastMonthEnd.getMonth(),
+        1
+      );
+      setDateFrom(lastMonthStart.toISOString().slice(0, 10));
+      setDateTo(lastMonthEnd.toISOString().slice(0, 10));
+      return;
+    }
+
+    if (mode === "last90") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 89);
+      setDateFrom(from.toISOString().slice(0, 10));
+      setDateTo(today.toISOString().slice(0, 10));
+      return;
+    }
+  }
+
+  // ---------- DERIVED STATS (RESPECT DATE RANGE) ----------
 
   const {
     totalOrders,
@@ -131,7 +204,7 @@ export default function DashboardPage() {
 
     if (!orders || orders.length === 0) return result;
 
-    // Filter by date range (if set)
+    // Filter by date
     let filteredOrders = orders;
 
     const fromDate = dateFrom ? new Date(dateFrom) : null;
@@ -145,7 +218,6 @@ export default function DashboardPage() {
 
         if (fromDate && od < fromDate) return false;
         if (toDate) {
-          // include orders on the "to" day as well
           const endOfTo = new Date(toDate);
           endOfTo.setHours(23, 59, 59, 999);
           if (od > endOfTo) return false;
@@ -168,7 +240,6 @@ export default function DashboardPage() {
       0
     );
 
-    // Flatten all lines
     const allLines: {
       itemName: string;
       category: string;
@@ -185,10 +256,8 @@ export default function DashboardPage() {
             ? l.items[0]
             : l.items;
 
-        const name =
-          (item?.name || "Unknown item") as string;
-        const category =
-          (item?.category || "Uncategorised") as string;
+        const name = (item?.name || "Unknown item") as string;
+        const category = (item?.category || "Uncategorised") as string;
 
         const ordered = l.qty ?? 0;
 
@@ -212,7 +281,6 @@ export default function DashboardPage() {
       }
     }
 
-    // Aggregate by item
     const byItem = new Map<
       string,
       {
@@ -258,13 +326,13 @@ export default function DashboardPage() {
       })
     );
 
-    // Top 12 by ordered for the demand chart
+    // Top 12 by ordered for chart
     result.itemDemandArray = itemArray
       .filter((d) => d.ordered > 0)
       .sort((a, b) => b.ordered - a.ordered)
       .slice(0, 12);
 
-    // Full backlog list (all items with pending > 0)
+    // Full backlog list
     const backlogItemsRaw = itemArray
       .filter((d) => d.pending > 0)
       .map((d) => ({
@@ -279,7 +347,7 @@ export default function DashboardPage() {
 
     result.backlogItemsRaw = backlogItemsRaw;
 
-    // Top 12 pending for the backlog chart
+    // Top 12 pending for chart
     const backlogSortedForChart = [...backlogItemsRaw].sort(
       (a, b) => b.pending - a.pending
     );
@@ -290,6 +358,7 @@ export default function DashboardPage() {
       string,
       { ordered: number; dispatched: number; pending: number }
     >();
+
     for (const l of allLines) {
       const catKey =
         l.category && l.category.trim() !== ""
@@ -361,12 +430,7 @@ export default function DashboardPage() {
     return result;
   }, [orders, dateFrom, dateTo]);
 
-    // Backlog table controls
-  const [backlogSortBy, setBacklogSortBy] = useState<
-    "pending" | "pendingPercent" | "ordered"
-  >("pending");
-  const [backlogShowAll, setBacklogShowAll] = useState(false);
-
+  // Backlog rows with sorting + top/all
   const backlogRows = useMemo(() => {
     let rows = [...backlogItemsRaw];
 
@@ -376,7 +440,6 @@ export default function DashboardPage() {
       } else if (backlogSortBy === "pendingPercent") {
         return (b.pendingPercent ?? 0) - (a.pendingPercent ?? 0);
       } else {
-        // ordered
         return b.ordered - a.ordered;
       }
     });
@@ -388,6 +451,7 @@ export default function DashboardPage() {
     return rows;
   }, [backlogItemsRaw, backlogSortBy, backlogShowAll]);
 
+  // CSV export
   function downloadBacklogCsv() {
     if (!backlogRows || backlogRows.length === 0) {
       alert("No backlog data to export.");
@@ -419,7 +483,7 @@ export default function DashboardPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }  
+  }
 
   // ---------- VEGA-LITE SPECS ----------
 
@@ -444,7 +508,7 @@ export default function DashboardPage() {
           title: "Ordered qty (pcs)",
         },
         color: {
-          value: "#f5f5f5", // light bar on dark bg
+          value: "#f5f5f5",
         },
         tooltip: [
           { field: "item", title: "Item" },
@@ -486,7 +550,7 @@ export default function DashboardPage() {
           title: "Ordered qty (pcs)",
         },
         color: {
-          value: "#a855f7", // accent color
+          value: "#a855f7",
         },
         tooltip: [
           { field: "category", title: "Category" },
@@ -528,7 +592,7 @@ export default function DashboardPage() {
           title: "Pending qty (pcs)",
         },
         color: {
-          value: "#f97316", // orange backlog
+          value: "#f97316",
         },
         tooltip: [
           { field: "item", title: "Item" },
@@ -602,9 +666,9 @@ export default function DashboardPage() {
     [fulfillmentBands]
   );
 
-  // ---------- RENDER ----------
+  const hasData = totalOrders > 0;
 
-  const hasData = orders.length > 0;
+  // ---------- RENDER ----------
 
   return (
     <>
@@ -633,33 +697,69 @@ export default function DashboardPage() {
           }}
         >
           <span style={{ opacity: 0.8 }}>Quick range:</span>
-          {[
-            { key: "all", label: "All time" },
-            { key: "thisMonth", label: "This month" },
-            { key: "lastMonth", label: "Last month" },
-            { key: "last90", label: "Last 90 days" },
-          ].map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() =>
-                setQuickRange(opt.key as "all" | "thisMonth" | "lastMonth" | "last90")
-              }
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid #333",
-                background: "transparent",
-                color: "#f5f5f5",
-                fontSize: 11,
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("all")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            All time
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("thisMonth")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            This month
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("lastMonth")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            Last month
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickRange("last90")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            Last 90 days
+          </button>
         </div>
 
-        {/* Manual from/to inputs */}
+        {/* Manual From/To inputs */}
         <div
           style={{
             display: "flex",
@@ -726,63 +826,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-        <span style={{ opacity: 0.8 }}>Filter by order date:</span>
-
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ opacity: 0.7 }}>From</span>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{
-              padding: "4px 8px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "#050505",
-              color: "#f5f5f5",
-              fontSize: 12,
-            }}
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ opacity: 0.7 }}>To</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{
-              padding: "4px 8px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "#050505",
-              color: "#f5f5f5",
-              fontSize: 12,
-            }}
-          />
-        </div>
-
-        {(dateFrom || dateTo) && (
-          <button
-            type="button"
-            onClick={() => {
-              setDateFrom("");
-              setDateTo("");
-            }}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#f5f5f5",
-              fontSize: 11,
-            }}
-          >
-            Clear filter
-          </button>
-        )}
-      </div>
-
       {/* SUMMARY CARDS */}
       <div className="card-grid" style={{ marginBottom: 18 }}>
         <div className="card">
@@ -818,9 +861,9 @@ export default function DashboardPage() {
 
       {!hasData && !loading && (
         <div className="card">
-          <div className="card-label">No data yet</div>
+          <div className="card-label">No data in this range</div>
           <div style={{ fontSize: 13, color: "#ddd" }}>
-            Punch some orders first, then come back here to see demand and fulfilment charts.
+            Try expanding the date range or punching some orders.
           </div>
         </div>
       )}
@@ -835,7 +878,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-label">Top Items by Demand</div>
               <div className="card-meta">
-                Hover bars · right-click menu → export PNG/SVG.
+                Hover bars · menu → export PNG/SVG.
               </div>
               <div style={{ marginTop: 10 }}>
                 <VegaLiteChart spec={itemDemandSpec} height={320} />
@@ -898,7 +941,14 @@ export default function DashboardPage() {
                 fontSize: 11,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                }}
+              >
                 <span style={{ opacity: 0.7 }}>Sort by:</span>
                 <div style={{ display: "flex", gap: 6 }}>
                   {[
@@ -930,7 +980,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
                 <button
                   type="button"
                   onClick={() => setBacklogShowAll((v) => !v)}
