@@ -16,6 +16,35 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+// Map status → colors
+const STATUS_COLORS: Record<string, string> = {
+  pending: "#6b7280", // grey
+  in_production: "#3b82f6", // blue
+  packed: "#8b5cf6", // purple
+  partially_dispatched: "#f97316", // orange
+  dispatched: "#22c55e", // green
+  cancelled: "#ef4444", // red
+};
+
+// Status suggestion helper
+function getStatusSuggestion(status: string, fulfil: number) {
+  const st = status || "pending";
+
+  if (fulfil === 100 && st !== "dispatched") {
+    return "⚠ Order looks fully dispatched — consider marking as 'dispatched'";
+  }
+
+  if (fulfil > 0 && fulfil < 100 && st === "pending") {
+    return "⚠ Items have been dispatched — consider 'partially_dispatched'";
+  }
+
+  if (fulfil >= 75 && st === "in_production") {
+    return "⚠ Most items dispatched — consider 'partially_dispatched' or 'dispatched'";
+  }
+
+  return "";
+}
+
 type OrderWithRelations = {
   id: string;
   order_code: string | null;
@@ -800,17 +829,26 @@ export default function OrdersPage() {
                   </div>
 
                   <div style={{ marginTop: 4 }}>
+                    <span style={{ marginRight: 4, opacity: 0.8 }}>Status:</span>
+
+                    {/* COLOURED PILL */}
                     <span
-                      style={{ marginRight: 4, opacity: 0.8 }}
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: STATUS_COLORS[order.status] || "#444",
+                        fontSize: 10,
+                        marginRight: 6,
+                      }}
                     >
-                      Status:
+                      {order.status.replace("_", " ")}
                     </span>
+
+                    {/* DROPDOWN */}
                     <select
                       value={order.status || "pending"}
                       onClick={(e) => e.stopPropagation()}
-                      onChange={(e) =>
-                        updateOrderStatus(order.id, e.target.value)
-                      }
+                      onChange={(e) => updateOrderStatus(order.id, e.target.value)}
                       style={{
                         padding: "2px 6px",
                         borderRadius: 999,
@@ -826,6 +864,20 @@ export default function OrdersPage() {
                         </option>
                       ))}
                     </select>
+
+                    {/* SUGGESTION TEXT */}
+                    {getStatusSuggestion(order.status, order.fulfilmentPercent) && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          marginTop: 4,
+                          opacity: 0.7,
+                          color: "#fbbf24",
+                        }}
+                      >
+                        {getStatusSuggestion(order.status, order.fulfilmentPercent)}
+                      </div>
+                    )}
                   </div>
                 </div>
               </button>
