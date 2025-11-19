@@ -224,6 +224,86 @@ export default function OrdersPage() {
         View all Tycoon orders, see fulfilment, and drill into details.
       </p>
 
+      {/* FILTER BAR */}
+      <div
+        style={{
+          marginBottom: 10,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+          alignItems: "center",
+          fontSize: 11,
+        }}
+      >
+        <span style={{ opacity: 0.75 }}>Filters:</span>
+
+        {/* Status filter */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ opacity: 0.7 }}>Status</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            <option value="all">All</option>
+            <option value="draft">Draft</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="in_production">In production</option>
+            <option value="dispatched">Dispatched</option>
+          </select>
+        </div>
+
+        {/* Fulfilment filter */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ opacity: 0.7 }}>Fulfilment</span>
+          <select
+            value={fulfilmentFilter}
+            onChange={(e) => setFulfilmentFilter(e.target.value)}
+            style={{
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            <option value="all">All</option>
+            <option value="low">&lt; 40%</option>
+            <option value="medium">40–74%</option>
+            <option value="high">75–99%</option>
+            <option value="complete">100%</option>
+          </select>
+        </div>
+
+        {(statusFilter !== "all" || fulfilmentFilter !== "all") && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("all");
+              setFulfilmentFilter("all");
+            }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {loading && enhancedOrders.length === 0 && (
         <div className="card">
           <div className="card-label">Loading orders…</div>
@@ -236,6 +316,17 @@ export default function OrdersPage() {
           <div style={{ fontSize: 13, opacity: 0.8 }}>
             Punch an order from the <strong>Punch Order</strong> page to see it
             here.
+          </div>
+        </div>
+      )}
+
+      {!loading &&
+      enhancedOrders.length > 0 &&
+      visibleOrders.length === 0 && (
+        <div className="card">
+          <div className="card-label">No orders match these filters</div>
+          <div style={{ fontSize: 13, opacity: 0.8 }}>
+            Try clearing or relaxing the filters.
           </div>
         </div>
       )}
