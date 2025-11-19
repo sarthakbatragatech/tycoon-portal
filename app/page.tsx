@@ -180,6 +180,10 @@ export default function DashboardPage() {
         item: d.item,
         pending: d.pending,
         ordered: d.ordered,
+        pendingPercent:
+          d.ordered > 0
+            ? Math.round((d.pending / d.ordered) * 100)
+            : 0,
       }));
 
     // Aggregate by category
@@ -557,8 +561,9 @@ export default function DashboardPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th style={{ width: "40%" }}>Item</th>
+                    <th style={{ width: "45%" }}>Item</th>
                     <th>Pending qty</th>
+                    <th>Pending %</th>
                     <th>Total ordered</th>
                   </tr>
                 </thead>
@@ -578,13 +583,26 @@ export default function DashboardPage() {
                     </tr>
                   )}
 
-                  {backlogTopItems.map((row) => (
-                    <tr key={row.item}>
-                      <td>{row.item}</td>
-                      <td>{row.pending} pcs</td>
-                      <td>{row.ordered} pcs</td>
-                    </tr>
-                  ))}
+                  {backlogTopItems.map((row) => {
+                    const pct = row.pendingPercent ?? 0;
+                    const isHigh = pct >= 50 && row.pending > 0;
+
+                    return (
+                      <tr key={row.item}>
+                        <td>{row.item}</td>
+                        <td>{row.pending} pcs</td>
+                        <td
+                          style={{
+                            color: isHigh ? "#ef4444" : "#e5e5e5",
+                            fontWeight: isHigh ? 600 : 400,
+                          }}
+                        >
+                          {pct}%
+                        </td>
+                        <td>{row.ordered} pcs</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
