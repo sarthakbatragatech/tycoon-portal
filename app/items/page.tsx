@@ -432,7 +432,7 @@ export default function ItemsPage() {
                         <input
                           type="text"
                           inputMode="numeric"
-                          value{it.dealer_rate}
+                          value={it.dealer_rate}
                           onChange={(e) =>
                             updateItemRate(it.id, e.target.value)
                           }
