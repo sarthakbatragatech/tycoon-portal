@@ -23,6 +23,10 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<OrderWithLines[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Date filter (YYYY-MM-DD from <input type="date" />)
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+
   useEffect(() => {
     loadData();
   }, []);
@@ -86,12 +90,39 @@ export default function DashboardPage() {
 
     if (!orders || orders.length === 0) return result;
 
-    result.totalOrders = orders.length;
-    result.totalQty = orders.reduce(
+    // Filter by date range (if set)
+    let filteredOrders = orders;
+
+    const fromDate = dateFrom ? new Date(dateFrom) : null;
+    const toDate = dateTo ? new Date(dateTo) : null;
+
+    if (fromDate || toDate) {
+      filteredOrders = orders.filter((o) => {
+        if (!o.order_date) return false;
+        const od = new Date(o.order_date);
+        if (Number.isNaN(od.getTime())) return false;
+
+        if (fromDate && od < fromDate) return false;
+        if (toDate) {
+          // include orders on the "to" day as well
+          const endOfTo = new Date(toDate);
+          endOfTo.setHours(23, 59, 59, 999);
+          if (od > endOfTo) return false;
+        }
+        return true;
+      });
+    }
+
+    if (filteredOrders.length === 0) {
+      return result;
+    }
+
+    result.totalOrders = filteredOrders.length;
+    result.totalQty = filteredOrders.reduce(
       (sum, o) => sum + (o.total_qty ?? 0),
       0
     );
-    result.totalValue = orders.reduce(
+    result.totalValue = filteredOrders.reduce(
       (sum, o) => sum + Number(o.total_value ?? 0),
       0
     );
@@ -105,7 +136,7 @@ export default function DashboardPage() {
       pending: number;
     }[] = [];
 
-    for (const o of orders) {
+    for (const o of filteredOrders) {
       const lines = o.order_lines || [];
       for (const l of lines) {
         const item =
@@ -140,7 +171,7 @@ export default function DashboardPage() {
       }
     }
 
-    // Aggregate by item (still tracking category, even if we don't show it in table)
+    // Aggregate by item
     const byItem = new Map<
       string,
       {
@@ -247,7 +278,7 @@ export default function DashboardPage() {
       .sort((a, b) => b.ordered - a.ordered);
 
     // Per-order fulfilment
-    result.orderFulfillmentArray = orders.map((o) => {
+    result.orderFulfillmentArray = filteredOrders.map((o) => {
       const lines = o.order_lines || [];
       const totalOrdered = lines.reduce(
         (sum, l) => sum + (l.qty ?? 0),
@@ -287,7 +318,7 @@ export default function DashboardPage() {
     });
 
     return result;
-  }, [orders]);
+  }, [orders, dateFrom, dateTo]);
 
     // Backlog table controls
   const [backlogSortBy, setBacklogSortBy] = useState<
@@ -315,6 +346,39 @@ export default function DashboardPage() {
 
     return rows;
   }, [backlogItemsRaw, backlogSortBy, backlogShowAll]);
+
+  function downloadBacklogCsv() {
+    if (!backlogRows || backlogRows.length === 0) {
+      alert("No backlog data to export.");
+      return;
+    }
+
+    const header = "Item,PendingQty,PendingPercent,TotalOrdered\n";
+    const lines = backlogRows
+      .map((row) =>
+        [
+          `"${row.item.replace(/"/g, '""')}"`,
+          row.pending,
+          row.pendingPercent ?? 0,
+          row.ordered,
+        ].join(",")
+      )
+      .join("\n");
+
+    const csv = header + lines;
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tycoon-backlog.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }  
 
   // ---------- VEGA-LITE SPECS ----------
 
@@ -508,6 +572,74 @@ export default function DashboardPage() {
         Live snapshot of demand, backlog and fulfilment across all Tycoon orders.
       </p>
 
+      {/* DATE FILTERS */}
+      <div
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+          alignItems: "center",
+          fontSize: 12,
+        }}
+      >
+        <span style={{ opacity: 0.8 }}>Filter by order date:</span>
+
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ opacity: 0.7 }}>From</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            style={{
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              fontSize: 12,
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ opacity: 0.7 }}>To</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            style={{
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              fontSize: 12,
+            }}
+          />
+        </div>
+
+        {(dateFrom || dateTo) && (
+          <button
+            type="button"
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+            }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "transparent",
+              color: "#f5f5f5",
+              fontSize: 11,
+            }}
+          >
+            Clear filter
+          </button>
+        )}
+      </div>
+
       {/* SUMMARY CARDS */}
       <div className="card-grid" style={{ marginBottom: 18 }}>
         <div className="card">
@@ -608,10 +740,10 @@ export default function DashboardPage() {
           <div className="card" style={{ marginBottom: 18 }}>
             <div className="card-label">Backlog Table · Pending by Item</div>
             <div className="card-meta">
-              Same data as the backlog chart, with sorting & quick filters.
+              Same data as the backlog chart, with sorting, filters & export.
             </div>
 
-            {/* Controls: sort + show all */}
+            {/* Controls: sort + show all + CSV */}
             <div
               style={{
                 display: "flex",
@@ -655,20 +787,37 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setBacklogShowAll((v) => !v)}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #333",
-                  background: "transparent",
-                  color: "#f5f5f5",
-                  fontSize: 11,
-                }}
-              >
-                {backlogShowAll ? "Show top 8" : "Show all items"}
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setBacklogShowAll((v) => !v)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #333",
+                    background: "transparent",
+                    color: "#f5f5f5",
+                    fontSize: 11,
+                  }}
+                >
+                  {backlogShowAll ? "Show top 8" : "Show all items"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadBacklogCsv}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #f5f5f5",
+                    background: "#f5f5f5",
+                    color: "#000",
+                    fontSize: 11,
+                  }}
+                >
+                  Download CSV
+                </button>
+              </div>
             </div>
 
             <div className="table-wrapper" style={{ marginTop: 10 }}>
