@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import VegaLiteChart from "../components/VegaLiteChart";
+import VegaLiteChart from "@/components/VegaLiteChart";
 
 type OrderWithLines = {
   id: string;
