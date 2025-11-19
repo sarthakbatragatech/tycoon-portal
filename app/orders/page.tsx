@@ -132,7 +132,12 @@ export default function OrdersPage() {
       loadOrders();
     }
   }
-
+  function formatDateLocal(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
   // DATE QUICK RANGE HELPER (B)
   function setQuickRange(
     mode: "all" | "thisMonth" | "lastMonth" | "last90"
@@ -148,8 +153,8 @@ export default function OrdersPage() {
 
     if (mode === "thisMonth") {
       const from = new Date(today.getFullYear(), today.getMonth(), 1);
-      setDateFrom(from.toISOString().slice(0, 10));
-      setDateTo(today.toISOString().slice(0, 10));
+      setDateFrom(formatDateLocal(from));
+      setDateTo(formatDateLocal(today));
       return;
     }
 
@@ -163,16 +168,16 @@ export default function OrdersPage() {
         lastMonthEnd.getMonth(),
         1
       );
-      setDateFrom(lastMonthStart.toISOString().slice(0, 10));
-      setDateTo(lastMonthEnd.toISOString().slice(0, 10));
+      setDateFrom(formatDateLocal(lastMonthStart));
+      setDateTo(formatDateLocal(lastMonthEnd));
       return;
     }
 
     if (mode === "last90") {
       const from = new Date(today);
       from.setDate(from.getDate() - 89);
-      setDateFrom(from.toISOString().slice(0, 10));
-      setDateTo(today.toISOString().slice(0, 10));
+      setDateFrom(formatDateLocal(from));
+      setDateTo(formatDateLocal(today));
       return;
     }
   }
