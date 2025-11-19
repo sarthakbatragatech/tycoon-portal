@@ -13,7 +13,7 @@ type OrderWithRelations = {
   status: string | null;
   total_qty: number | null;
   total_value: number | null;
-  parties?: any; // Supabase may return object or array
+  parties?: any;
   order_lines?: any[];
 };
 
@@ -42,8 +42,12 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+  // Filters
   const [statusFilter, setStatusFilter] = useState("all");
   const [fulfilmentFilter, setFulfilmentFilter] = useState("all");
+
+  // Search (party name + item name only)
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -92,23 +96,23 @@ export default function OrdersPage() {
     setExpandedOrderId((current) => (current === orderId ? null : orderId));
   }
 
+  // Build rich objects per order
   const enhancedOrders: EnhancedOrder[] = useMemo(() => {
     if (!orders || orders.length === 0) return [];
 
     return orders.map((o) => {
-      // --- party: handle object or array shape ---
+      // Party: Supabase may return object or array
       const partyRel: any = (o as any).parties;
       const party =
         partyRel && Array.isArray(partyRel) && partyRel.length > 0
           ? partyRel[0]
           : partyRel || null;
 
-      // --- lines: handle items object/array + dispatched_qty ---
+      // Lines: handle items array/object + dispatched_qty
       const linesRaw: any[] = (o as any).order_lines || [];
 
       const lineSummaries = linesRaw.map((l) => {
         const itemRel: any = (l as any).items;
-
         const item =
           itemRel && Array.isArray(itemRel) && itemRel.length > 0
             ? itemRel[0]
@@ -182,6 +186,7 @@ export default function OrdersPage() {
     });
   }, [orders]);
 
+  // Apply filters + search → final list to show
   const visibleOrders = useMemo(() => {
     let list = [...enhancedOrders];
 
@@ -198,14 +203,15 @@ export default function OrdersPage() {
       list = list.filter((o) => {
         const p = o.fulfilmentPercent ?? 0;
 
-        if (fulfilmentFilter === "low") return p < 40;              
-        if (fulfilmentFilter === "medium") return p >= 40 && p < 75; 
-        if (fulfilmentFilter === "high") return p >= 75 && p < 100;  
-        if (fulfilmentFilter === "complete") return p === 100;       
+        if (fulfilmentFilter === "low") return p < 40;
+        if (fulfilmentFilter === "medium") return p >= 40 && p < 75;
+        if (fulfilmentFilter === "high") return p >= 75 && p < 100;
+        if (fulfilmentFilter === "complete") return p === 100;
 
         return true;
       });
     }
+
     // Search filter (party name + item names only)
     if (searchQuery.trim() !== "") {
       const q = searchQuery.trim().toLowerCase();
@@ -213,17 +219,16 @@ export default function OrdersPage() {
       list = list.filter((o) => {
         const party = o.partyName?.toLowerCase() || "";
 
-        // Search inside item names
         const itemMatch = o.lines.some((line) =>
           line.itemName.toLowerCase().includes(q)
         );
 
-        // Match if party name OR any item name contains query
         return party.includes(q) || itemMatch;
       });
     }
+
     return list;
-  }, [enhancedOrders, statusFilter, fulfilmentFilter]);
+  }, [enhancedOrders, statusFilter, fulfilmentFilter, searchQuery]);
 
   function fulfilmentColour(percent: number): string {
     if (percent >= 100) return "#22c55e";
@@ -258,7 +263,7 @@ export default function OrdersPage() {
           }}
         />
       </div>
-      
+
       {/* FILTER BAR */}
       <div
         style={{
@@ -334,7 +339,7 @@ export default function OrdersPage() {
               fontSize: 11,
             }}
           >
-            Clear
+            Clear filters
           </button>
         )}
       </div>
@@ -356,15 +361,15 @@ export default function OrdersPage() {
       )}
 
       {!loading &&
-      enhancedOrders.length > 0 &&
-      visibleOrders.length === 0 && (
-        <div className="card">
-          <div className="card-label">No orders match these filters</div>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>
-            Try clearing or relaxing the filters.
+        enhancedOrders.length > 0 &&
+        visibleOrders.length === 0 && (
+          <div className="card">
+            <div className="card-label">No orders match these filters</div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              Try changing or clearing the search/filters.
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       <div className="card-grid" style={{ flexDirection: "column", gap: 10 }}>
         {visibleOrders.map((order) => {
@@ -469,7 +474,7 @@ export default function OrdersPage() {
                 >
                   <div>
                     {order.totalQty} pcs · ₹{" "}
-                    {order.totalValue.toLocaleString("en-IN")}
+                      {order.totalValue.toLocaleString("en-IN")}
                   </div>
                   <div style={{ textTransform: "capitalize" }}>
                     Status: {order.status || "pending"}
