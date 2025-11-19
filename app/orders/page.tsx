@@ -66,7 +66,7 @@ export default function OrdersPage() {
         ),
         order_lines (
           qty,
-          dispatched_qt,
+          dispatched_qty,
           items (
             name
           )
@@ -100,7 +100,7 @@ export default function OrdersPage() {
           ? partyRel[0]
           : partyRel || null;
 
-      // --- lines: handle items object/array + dispatched_qt ---
+      // --- lines: handle items object/array + dispatched_qty ---
       const linesRaw: any[] = (o as any).order_lines || [];
 
       const lineSummaries = linesRaw.map((l) => {
@@ -115,7 +115,7 @@ export default function OrdersPage() {
 
         const ordered = (l as any).qty ?? 0;
 
-        const dispatchedRaw = (l as any).dispatched_qt ?? 0;
+        const dispatchedRaw = (l as any).dispatched_qty ?? 0;
         let dispatched = Number(dispatchedRaw);
         if (Number.isNaN(dispatched)) dispatched = 0;
         if (dispatched < 0) dispatched = 0;
