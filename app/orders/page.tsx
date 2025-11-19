@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 
 type OrderWithRelations = {
   id: string;
+  order_code: string | null;
   order_date: string | null;
   status: string | null;
   total_qty: number | null;
@@ -22,6 +23,7 @@ type OrderWithRelations = {
 
 type EnhancedOrder = {
   id: string;
+  orderCode: string;
   orderDateLabel: string;
   partyName: string;
   partyCity: string;
@@ -57,6 +59,7 @@ const { data, error } = await supabase
   .from("orders")
   .select(`
     id,
+    order_code
     order_date,
     status,
     total_qty,
@@ -159,8 +162,15 @@ const { data, error } = await supabase
           })
         : "No date";
 
+      // Clean order code pulled from DB
+      const orderCode =
+        o.order_code && o.order_code !== ""
+          ? o.order_code
+          : o.id.slice(0, 8); // fallback to short UUID if needed
+
       return {
         id: o.id,
+        orderCode,
         orderDateLabel,
         partyName: (party?.name || "Unknown party") as string,
         partyCity: (party?.city || "") as string,
@@ -296,7 +306,7 @@ const { data, error } = await supabase
                         gap: 8,
                       }}
                     >
-                      <span>Order #{order.id.slice(0, 8)}</span>
+                      <span>Order #{order.orderCode}</span>
                       <span>·</span>
                       <span>{order.orderDateLabel}</span>
                       <span>·</span>
