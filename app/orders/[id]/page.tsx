@@ -15,6 +15,15 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+const STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "submitted", label: "Submitted" },
+  { value: "in_production", label: "In Production" },
+  { value: "packed", label: "Packed" },
+  { value: "dispatched", label: "Dispatched" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -23,6 +32,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingDispatch, setSavingDispatch] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -74,7 +84,7 @@ export default function OrderDetailPage() {
     setLoading(false);
   }
 
-  // Make dispatched_qty behave like qty: editable, can be empty, numeric only
+  // Make dispatched_qty behave nicely: editable, can be empty, numeric only
   function handleDispatchedChange(lineId: string, value: string) {
     if (!order) return;
 
@@ -149,6 +159,35 @@ export default function OrderDetailPage() {
     }
   }
 
+  function handleStatusChange(value: string) {
+    if (!order) return;
+    setOrder({ ...order, status: value });
+  }
+
+  async function saveStatus() {
+    if (!order) return;
+    setSavingStatus(true);
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: order.status })
+        .eq("id", order.id);
+
+      if (error) {
+        console.error("Error updating status", error);
+        alert("Error updating status: " + error.message);
+        setSavingStatus(false);
+        return;
+      }
+
+      alert("Order status updated.");
+      await loadOrder();
+    } finally {
+      setSavingStatus(false);
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -183,11 +222,25 @@ export default function OrderDetailPage() {
   const statusLabel = STATUS_LABELS[order.status] ?? order.status;
   const displayCode = order.order_code || order.id;
 
+  // For a small hint on dispatch progress
+  const totalOrdered = lines.reduce((sum, l: any) => sum + (l.qty ?? 0), 0);
+  const totalDispatched = lines.reduce((sum, l: any) => {
+    const raw =
+      l.dispatched_qty === "" || l.dispatched_qty == null
+        ? 0
+        : Number(l.dispatched_qty);
+    const ordered = l.qty ?? 0;
+    let dispatched = Number.isNaN(raw) ? 0 : raw;
+    if (dispatched < 0) dispatched = 0;
+    if (dispatched > ordered) dispatched = ordered;
+    return sum + dispatched;
+  }, 0);
+
   return (
     <>
       <h1 className="section-title">Order Detail</h1>
       <p className="section-subtitle">
-        Full breakdown of this Tycoon order with dispatch tracking.
+        Full breakdown of this Tycoon order with status & dispatch tracking.
       </p>
 
       {/* TOP SUMMARY */}
@@ -197,11 +250,34 @@ export default function OrderDetailPage() {
           <div className="card-value" style={{ fontSize: 16 }}>
             {displayCode}
           </div>
-          <div className="card-meta">
+          <div className="card-meta" style={{ fontSize: 12, lineHeight: 1.5 }}>
             Internal ID: <span style={{ fontSize: 11 }}>{order.id}</span>
             <br />
-            Status:{" "}
-            <span style={{ textTransform: "uppercase" }}>{statusLabel}</span>
+            <span style={{ display: "inline-block", marginTop: 6 }}>
+              Status:&nbsp;
+              <select
+                value={order.status}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "#050505",
+                  color: "#f5f5f5",
+                  fontSize: 11,
+                }}
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+            <br />
+            <span style={{ opacity: 0.7 }}>
+              Current: {statusLabel || "Unknown"}
+            </span>
           </div>
         </div>
 
@@ -233,7 +309,9 @@ export default function OrderDetailPage() {
             {order.total_qty ?? 0} pcs · ₹
             {(order.total_value ?? 0).toLocaleString("en-IN")}
           </div>
-          <div className="card-meta">Sum of all line items</div>
+          <div className="card-meta">
+            Dispatched: {totalDispatched} / {totalOrdered} pcs
+          </div>
         </div>
       </div>
 
@@ -312,9 +390,7 @@ export default function OrderDetailPage() {
                       inputMode="numeric"
                       pattern="[0-9]*"
                       value={
-                        l.dispatched_qty === ""
-                          ? ""
-                          : String(dispatched)
+                        l.dispatched_qty === "" ? "" : String(dispatched)
                       }
                       onChange={(e) =>
                         handleDispatchedChange(l.id, e.target.value)
@@ -348,7 +424,14 @@ export default function OrderDetailPage() {
       </div>
 
       {/* ACTIONS */}
-      <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
+      <div
+        style={{
+          marginTop: 16,
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         <button
           className="pill-button"
           type="button"
@@ -364,6 +447,15 @@ export default function OrderDetailPage() {
           disabled={savingDispatch}
         >
           {savingDispatch ? "Saving…" : "Save dispatch quantities"}
+        </button>
+
+        <button
+          className="pill-button"
+          type="button"
+          onClick={saveStatus}
+          disabled={savingStatus}
+        >
+          {savingStatus ? "Saving status…" : "Save status"}
         </button>
       </div>
     </>
