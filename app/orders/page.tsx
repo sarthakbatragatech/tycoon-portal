@@ -67,9 +67,6 @@ export default function OrdersPage() {
           name,
           city
         ),
-        stakeholders (
-          name
-        ),
         order_lines (
           qty,
           dispatched_qty,
