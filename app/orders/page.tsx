@@ -44,6 +44,7 @@ export default function OrdersPage() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [fulfilmentFilter, setFulfilmentFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     loadOrders();
@@ -205,7 +206,22 @@ export default function OrdersPage() {
         return true;
       });
     }
+    // Search filter (party name + item names only)
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.trim().toLowerCase();
 
+      list = list.filter((o) => {
+        const party = o.partyName?.toLowerCase() || "";
+
+        // Search inside item names
+        const itemMatch = o.lines.some((line) =>
+          line.itemName.toLowerCase().includes(q)
+        );
+
+        // Match if party name OR any item name contains query
+        return party.includes(q) || itemMatch;
+      });
+    }
     return list;
   }, [enhancedOrders, statusFilter, fulfilmentFilter]);
 
@@ -224,6 +240,25 @@ export default function OrdersPage() {
         View all Tycoon orders, see fulfilment, and drill into details.
       </p>
 
+      {/* SEARCH BAR */}
+      <div style={{ marginBottom: 12 }}>
+        <input
+          type="text"
+          placeholder="Search by party or item name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "8px 12px",
+            borderRadius: 999,
+            border: "1px solid #333",
+            background: "#050505",
+            color: "#f5f5f5",
+            fontSize: 13,
+          }}
+        />
+      </div>
+      
       {/* FILTER BAR */}
       <div
         style={{
