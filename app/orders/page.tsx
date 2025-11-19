@@ -97,18 +97,22 @@ const { data, error } = await supabase
     if (!orders || orders.length === 0) return [];
 
     return orders.map((o) => {
-      const party =
-        o.parties && Array.isArray(o.parties) && o.parties.length > 0
-          ? o.parties[0]
-          : null;
+      const partyRel: any = (o as any).parties;
 
+      const party =
+        partyRel && Array.isArray(partyRel) && partyRel.length > 0
+          ? partyRel[0]
+          : partyRel || null;
+          
       const lines = o.order_lines || [];
 
       const lineSummaries = lines.map((l) => {
+        const itemRel: any = (l as any).items;
+
         const item =
-          l.items && Array.isArray(l.items) && l.items.length > 0
-            ? l.items[0]
-            : null;
+          itemRel && Array.isArray(itemRel) && itemRel.length > 0
+            ? itemRel[0]
+            : itemRel || null;
 
         const itemName = (item?.name || "Unknown item") as string;
         const ordered = l.qty ?? 0;
