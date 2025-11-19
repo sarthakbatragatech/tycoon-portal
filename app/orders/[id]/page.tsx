@@ -222,7 +222,7 @@ export default function OrderDetailPage() {
   const statusLabel = STATUS_LABELS[order.status] ?? order.status;
   const displayCode = order.order_code || order.id;
 
-  // For a small hint on dispatch progress
+  // Dispatch progress
   const totalOrdered = lines.reduce((sum, l: any) => sum + (l.qty ?? 0), 0);
   const totalDispatched = lines.reduce((sum, l: any) => {
     const raw =
@@ -235,6 +235,11 @@ export default function OrderDetailPage() {
     if (dispatched > ordered) dispatched = ordered;
     return sum + dispatched;
   }, 0);
+
+  const fulfillmentPercent =
+    totalOrdered > 0
+      ? Math.round((totalDispatched / totalOrdered) * 100)
+      : 0;
 
   return (
     <>
@@ -311,6 +316,39 @@ export default function OrderDetailPage() {
           </div>
           <div className="card-meta">
             Dispatched: {totalDispatched} / {totalOrdered} pcs
+          </div>
+
+          {/* Fulfilment bar */}
+          <div style={{ marginTop: 8 }}>
+            <div
+              style={{
+                width: "100%",
+                height: 6,
+                borderRadius: 999,
+                background: "#151515",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${fulfillmentPercent}%`,
+                  height: "100%",
+                  borderRadius: 999,
+                  background:
+                    fulfillmentPercent === 100 ? "#22c55e" : "#f5f5f5",
+                  transition: "width 0.2s ease-out",
+                }}
+              />
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                marginTop: 4,
+                opacity: 0.8,
+              }}
+            >
+              {fulfillmentPercent}% fulfilled
+            </div>
           </div>
         </div>
       </div>
