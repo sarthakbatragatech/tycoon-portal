@@ -32,6 +32,7 @@ export default function PunchOrderPage() {
     const { data, error } = await supabase
       .from("parties")
       .select("id, name, city")
+      .eq("is_active", true)
       .order("name");
 
     if (error) {

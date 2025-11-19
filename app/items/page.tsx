@@ -11,19 +11,18 @@ type UIItem = {
   category: string;
   unit: string;
   is_active: boolean;
-  dealer_rate: string; // stored as string for nice editing
+  dealer_rate: string; // string in UI for smooth editing
 };
-
-const CATEGORY_OPTIONS = ["jeep", "bike", "car", "scooter", "spare"];
 
 export default function ItemsPage() {
   const [items, setItems] = useState<UIItem[]>([]);
+  const [categorySuggestions, setCategorySuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
 
   // New item form state
   const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState("jeep");
+  const [newCategory, setNewCategory] = useState("");
   const [newRate, setNewRate] = useState("");
   const [newUnit, setNewUnit] = useState("pcs");
   const [adding, setAdding] = useState(false);
@@ -43,11 +42,12 @@ export default function ItemsPage() {
     if (error) {
       console.error("Error loading items", error);
       setItems([]);
+      setCategorySuggestions([]);
     } else {
       const mapped: UIItem[] = (data || []).map((i: any) => ({
         id: i.id,
         name: i.name,
-        category: i.category,
+        category: i.category || "",
         unit: i.unit || "pcs",
         is_active: i.is_active ?? true,
         dealer_rate:
@@ -56,15 +56,45 @@ export default function ItemsPage() {
             : "",
       }));
       setItems(mapped);
+
+      // Build unique category list from DB
+      const cats = Array.from(
+        new Set(
+          (data || [])
+            .map((i: any) => i.category)
+            .filter((c: any) => c && typeof c === "string")
+        )
+      ).sort((a: any, b: any) =>
+        String(a).localeCompare(String(b), "en", { sensitivity: "base" })
+      );
+      setCategorySuggestions(cats as string[]);
+
+      // If no newCategory yet, default to first category suggestion if exists
+      if (!newCategory && cats.length > 0) {
+        setNewCategory(String(cats[0]));
+      }
     }
 
     setLoading(false);
   }
 
-  function updateItemRate(id: string, value: string) {
+  function updateItemField(
+    id: string,
+    field: keyof UIItem,
+    value: string
+  ) {
     setItems((prev) =>
       prev.map((it) =>
-        it.id === id ? { ...it, dealer_rate: value.replace(/[^\d.]/g, "") } : it
+        it.id === id ? { ...it, [field]: value } : it
+      )
+    );
+  }
+
+  function updateItemRate(id: string, value: string) {
+    const cleaned = value.replace(/[^\d.]/g, "");
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === id ? { ...it, dealer_rate: cleaned } : it
       )
     );
   }
@@ -93,7 +123,7 @@ export default function ItemsPage() {
     setSavingItemId(null);
   }
 
-  async function saveRate(id: string) {
+  async function saveItem(id: string) {
     const item = items.find((i) => i.id === id);
     if (!item) return;
 
@@ -109,21 +139,29 @@ export default function ItemsPage() {
       return;
     }
 
+    const categoryStr = item.category.trim();
+
     setSavingItemId(id);
 
     const { error } = await supabase
       .from("items")
-      .update({ dealer_rate: rateNum })
+      .update({
+        dealer_rate: rateNum,
+        category: categoryStr || null,
+      })
       .eq("id", id);
 
     if (error) {
-      console.error("Error saving rate", error);
-      alert("Error saving rate: " + error.message);
+      console.error("Error saving item", error);
+      alert("Error saving item: " + error.message);
       setSavingItemId(null);
       return;
     }
 
     setSavingItemId(null);
+
+    // Refresh suggestions if category changed to a new one
+    await loadItems();
   }
 
   async function addNewItem() {
@@ -143,6 +181,8 @@ export default function ItemsPage() {
       return;
     }
 
+    const categoryStr = newCategory.trim();
+
     setAdding(true);
 
     const { data, error } = await supabase
@@ -150,7 +190,7 @@ export default function ItemsPage() {
       .insert([
         {
           name: newName.trim(),
-          category: newCategory,
+          category: categoryStr || null,
           dealer_rate: rateNum,
           unit: newUnit.trim() || "pcs",
           is_active: true,
@@ -169,7 +209,7 @@ export default function ItemsPage() {
     const newItem: UIItem = {
       id: data.id,
       name: data.name,
-      category: data.category,
+      category: data.category || "",
       unit: data.unit || "pcs",
       is_active: data.is_active ?? true,
       dealer_rate:
@@ -180,9 +220,20 @@ export default function ItemsPage() {
 
     setItems((prev) => [...prev, newItem]);
 
-    // Clear form
+    // If category is new, add to suggestions
+    if (
+      newItem.category &&
+      !categorySuggestions.includes(newItem.category)
+    ) {
+      setCategorySuggestions((prev) =>
+        [...prev, newItem.category].sort((a, b) =>
+          a.localeCompare(b, "en", { sensitivity: "base" })
+        )
+      );
+    }
+
+    // Clear form (keep category to speed up adding similar items)
     setNewName("");
-    setNewCategory("jeep");
     setNewRate("");
     setNewUnit("pcs");
     setAdding(false);
@@ -192,7 +243,7 @@ export default function ItemsPage() {
     <>
       <h1 className="section-title">Items</h1>
       <p className="section-subtitle">
-        Manage Tycoon items · dealer rates · active / inactive.
+        Manage Tycoon items · categories · dealer rates · active / inactive.
       </p>
 
       {/* ADD NEW ITEM */}
@@ -203,7 +254,7 @@ export default function ItemsPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1.2fr 1.2fr 1fr auto",
+            gridTemplateColumns: "2fr 1.4fr 1.2fr 1fr auto",
             gap: 8,
             alignItems: "center",
           }}
@@ -224,25 +275,30 @@ export default function ItemsPage() {
             }}
           />
 
-          <select
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "#050505",
-              color: "#f5f5f5",
-              fontSize: 12,
-            }}
-          >
-            {CATEGORY_OPTIONS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          {/* Category: free text with suggestions from DB */}
+          <div style={{ position: "relative" }}>
+            <input
+              type="text"
+              list="item-categories"
+              placeholder="Category (jeep, bike, spare...)"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "#050505",
+                color: "#f5f5f5",
+                fontSize: 12,
+              }}
+            />
+            <datalist id="item-categories">
+              {categorySuggestions.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
 
           <input
             type="text"
@@ -318,7 +374,25 @@ export default function ItemsPage() {
             {items.map((it) => (
               <tr key={it.id}>
                 <td>{it.name}</td>
-                <td>{it.category}</td>
+                <td>
+                  <input
+                    type="text"
+                    list="item-categories"
+                    value={it.category}
+                    onChange={(e) =>
+                      updateItemField(it.id, "category", e.target.value)
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border: "1px solid #333",
+                      background: "#050505",
+                      color: "#f5f5f5",
+                      fontSize: 12,
+                    }}
+                  />
+                </td>
                 <td>
                   <input
                     type="text"
@@ -359,7 +433,7 @@ export default function ItemsPage() {
                 <td>
                   <button
                     type="button"
-                    onClick={() => saveRate(it.id)}
+                    onClick={() => saveItem(it.id)}
                     disabled={savingItemId === it.id}
                     style={{
                       padding: "4px 12px",
