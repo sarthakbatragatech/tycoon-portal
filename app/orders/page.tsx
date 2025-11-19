@@ -39,6 +39,10 @@ export default function OrdersPage() {
         parties (
           name,
           city
+        ),
+        order_lines (
+          qty,
+          dispatched_qty
         )
       `
       )
@@ -107,11 +111,12 @@ export default function OrdersPage() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "28%" }}>Order (tap to open)</th>
+              <th style={{ width: "24%" }}>Order (tap to open)</th>
               <th>Party</th>
               <th>Date</th>
               <th>Qty</th>
               <th>Value</th>
+              <th>Fulfilment</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -127,6 +132,30 @@ export default function OrdersPage() {
               const statusLabel = STATUS_LABELS[o.status] ?? o.status;
               const displayCode =
                 o.order_code || (o.id || "").slice(0, 8);
+
+              const lines = o.order_lines || [];
+              const totalOrdered = lines.reduce(
+                (sum: number, l: any) => sum + (l.qty ?? 0),
+                0
+              );
+              const totalDispatched = lines.reduce(
+                (sum: number, l: any) => {
+                  const ordered = l.qty ?? 0;
+                  const raw =
+                    l.dispatched_qty === "" || l.dispatched_qty == null
+                      ? 0
+                      : Number(l.dispatched_qty);
+                  let dispatched = Number.isNaN(raw) ? 0 : raw;
+                  if (dispatched < 0) dispatched = 0;
+                  if (dispatched > ordered) dispatched = ordered;
+                  return sum + dispatched;
+                },
+                0
+              );
+              const fulfillmentPercent =
+                totalOrdered > 0
+                  ? Math.round((totalDispatched / totalOrdered) * 100)
+                  : 0;
 
               return (
                 <tr key={o.id}>
@@ -174,6 +203,42 @@ export default function OrdersPage() {
                     ₹ {(o.total_value ?? 0).toLocaleString("en-IN")}
                   </td>
                   <td>
+                    {/* Tiny fulfilment bar */}
+                    <div style={{ minWidth: 80 }}>
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 4,
+                          borderRadius: 999,
+                          background: "#151515",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${fulfillmentPercent}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background:
+                              fulfillmentPercent === 100
+                                ? "#22c55e"
+                                : "#f5f5f5",
+                            transition: "width 0.2s ease-out",
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          marginTop: 3,
+                          opacity: 0.8,
+                        }}
+                      >
+                        {fulfillmentPercent}%
+                      </div>
+                    </div>
+                  </td>
+                  <td>
                     <span className="badge">{statusLabel}</span>
                   </td>
                 </tr>
@@ -182,7 +247,7 @@ export default function OrdersPage() {
 
             {!loading && orders.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 12 }}>
+                <td colSpan={7} style={{ textAlign: "center", padding: 12 }}>
                   No orders yet. Punch one from the{" "}
                   <strong>Punch Order</strong> page.
                 </td>
@@ -191,7 +256,7 @@ export default function OrdersPage() {
 
             {loading && (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 12 }}>
+                <td colSpan={7} style={{ textAlign: "center", padding: 12 }}>
                   Loading…
                 </td>
               </tr>
