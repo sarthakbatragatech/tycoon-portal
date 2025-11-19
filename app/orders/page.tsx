@@ -837,11 +837,14 @@ export default function OrdersPage() {
                         padding: "2px 8px",
                         borderRadius: 999,
                         background: STATUS_COLORS[order.status] || "#444",
+                        color: "#f9fafb",            // <— force light text
                         fontSize: 10,
+                        fontWeight: 600,
+                        textTransform: "capitalize",
                         marginRight: 6,
                       }}
                     >
-                      {order.status.replace("_", " ")}
+                      {(order.status || "pending").replace("_", " ")}
                     </span>
 
                     {/* DROPDOWN */}
