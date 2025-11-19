@@ -13,7 +13,6 @@ type OrderWithRelations = {
   total_qty: number | null;
   total_value: number | null;
   parties?: { name: string | null; city: string | null }[] | null;
-  stakeholders?: { name: string | null }[] | null;
   order_lines?: {
     qty: number | null;
     dispatched_qty: number | string | null;
@@ -100,12 +99,6 @@ export default function OrdersPage() {
         o.parties && Array.isArray(o.parties) && o.parties.length > 0
           ? o.parties[0]
           : null;
-      const stakeholder =
-        o.stakeholders &&
-        Array.isArray(o.stakeholders) &&
-        o.stakeholders.length > 0
-          ? o.stakeholders[0]
-          : null;
 
       const lines = o.order_lines || [];
 
@@ -165,7 +158,7 @@ export default function OrdersPage() {
         orderDateLabel,
         partyName: (party?.name || "Unknown party") as string,
         partyCity: (party?.city || "") as string,
-        stakeholderName: (stakeholder?.name || "Unknown") as string,
+        stakeholderName: "N/A",
         status: (o.status || "pending") as string,
         totalQty: o.total_qty ?? orderedTotal,
         totalValue: o.total_value ?? 0,
