@@ -406,6 +406,7 @@ export default function DashboardPage() {
           field: "band",
           type: "ordinal",
           title: "Fulfilment band",
+          sort: ["0–25%", "25–75%", "75–99%", "100%"],
         },
         y: {
           field: "count",
