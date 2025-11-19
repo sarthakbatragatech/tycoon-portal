@@ -27,6 +27,47 @@ export default function DashboardPage() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
+  function setQuickRange(mode: "all" | "thisMonth" | "lastMonth" | "last90") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (mode === "all") {
+      setDateFrom("");
+      setDateTo("");
+      return;
+    }
+
+    if (mode === "thisMonth") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setDateFrom(from.toISOString().slice(0, 10));
+      setDateTo(today.toISOString().slice(0, 10));
+      return;
+    }
+
+    if (mode === "lastMonth") {
+      const year = today.getFullYear();
+      const month = today.getMonth(); // 0-based
+      const firstThisMonth = new Date(year, month, 1);
+      const lastMonthEnd = new Date(firstThisMonth.getTime() - 1); // last day of last month
+      const lastMonthStart = new Date(
+        lastMonthEnd.getFullYear(),
+        lastMonthEnd.getMonth(),
+        1
+      );
+      setDateFrom(lastMonthStart.toISOString().slice(0, 10));
+      setDateTo(lastMonthEnd.toISOString().slice(0, 10));
+      return;
+    }
+
+    if (mode === "last90") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 89); // count today as day 90
+      setDateFrom(from.toISOString().slice(0, 10));
+      setDateTo(today.toISOString().slice(0, 10));
+      return;
+    }
+  }  
+
   useEffect(() => {
     loadData();
   }, []);
@@ -577,12 +618,114 @@ export default function DashboardPage() {
         style={{
           marginBottom: 16,
           display: "flex",
-          flexWrap: "wrap",
-          gap: 10,
-          alignItems: "center",
+          flexDirection: "column",
+          gap: 6,
           fontSize: 12,
         }}
       >
+        {/* Quick selectors */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            alignItems: "center",
+          }}
+        >
+          <span style={{ opacity: 0.8 }}>Quick range:</span>
+          {[
+            { key: "all", label: "All time" },
+            { key: "thisMonth", label: "This month" },
+            { key: "lastMonth", label: "Last month" },
+            { key: "last90", label: "Last 90 days" },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() =>
+                setQuickRange(opt.key as "all" | "thisMonth" | "lastMonth" | "last90")
+              }
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "transparent",
+                color: "#f5f5f5",
+                fontSize: 11,
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Manual from/to inputs */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <span style={{ opacity: 0.8 }}>Filter by order date:</span>
+
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ opacity: 0.7 }}>From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "#050505",
+                color: "#f5f5f5",
+                fontSize: 12,
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ opacity: 0.7 }}>To</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "#050505",
+                color: "#f5f5f5",
+                fontSize: 12,
+              }}
+            />
+          </div>
+
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+              }}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid #333",
+                background: "transparent",
+                color: "#f5f5f5",
+                fontSize: 11,
+              }}
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
+      </div>
+
         <span style={{ opacity: 0.8 }}>Filter by order date:</span>
 
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
