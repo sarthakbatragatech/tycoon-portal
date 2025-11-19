@@ -260,179 +260,145 @@ export default function DashboardPage() {
 
   // ---------- VEGA-LITE SPECS ----------
 
-const itemDemandSpec = useMemo(
-  () => ({
-    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-    description: "Top items by ordered quantity",
-    background: "transparent",
-    width: "container",
-    data: { values: itemDemandArray },
-    mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
-    encoding: {
-      y: {
-        field: "item",
-        type: "ordinal",
-        sort: "-x",
-        title: null,
-      },
-      x: {
-        field: "ordered",
-        type: "quantitative",
-        title: "Ordered qty (pcs)",
-      },
-      color: {
-        value: "#f5f5f5", // light bar on dark bg
-      },
-      tooltip: [
-        { field: "item", title: "Item" },
-        { field: "ordered", title: "Ordered pcs" },
-        { field: "dispatched", title: "Dispatched pcs" },
-        { field: "pending", title: "Pending pcs" },
-      ],
-    },
-    config: {
-      view: { stroke: "transparent" },
-      axis: {
-        labelColor: "#e5e5e5",
-        titleColor: "#e5e5e5",
-        gridColor: "#262626",
-      },
-    },
-  }),
-  [itemDemandArray]
-);
-
-const categoryDemandSpec = useMemo(
-  () => ({
-    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-    description: "Demand by category",
-    background: "transparent",
-    width: "container",
-    data: { values: categoryDemandArray },
-    mark: { type: "bar", tooltip: true, cornerRadiusEnd: 2 },
-    encoding: {
-      x: {
-        field: "category",
-        type: "ordinal",
-        sort: "-y",
-        title: null,
-      },
-      y: {
-        field: "ordered",
-        type: "quantitative",
-        title: "Ordered qty (pcs)",
-      },
-      color: {
-        value: "#a855f7", // Tycoon-ish accent (purple)
-      },
-      tooltip: [
-        { field: "category", title: "Category" },
-        { field: "ordered", title: "Ordered pcs" },
-        { field: "dispatched", title: "Dispatched pcs" },
-        { field: "pending", title: "Pending pcs" },
-      ],
-    },
-    config: {
-      view: { stroke: "transparent" },
-      axis: {
-        labelColor: "#e5e5e5",
-        titleColor: "#e5e5e5",
-        gridColor: "#262626",
-      },
-    },
-  }),
-  [categoryDemandArray]
-);
-
-const pendingItemsSpec = useMemo(
-  () => ({
-    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-    description: "Top pending items",
-    background: "transparent",
-    width: "container",
-    data: { values: itemPendingArray },
-    mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
-    encoding: {
-      y: {
-        field: "item",
-        type: "ordinal",
-        sort: "-x",
-        title: null,
-      },
-      x: {
-        field: "pending",
-        type: "quantitative",
-        title: "Pending qty (pcs)",
-      },
-      color: {
-        value: "#f97316", // orange backlog
-      },
-      tooltip: [
-        { field: "item", title: "Item" },
-        { field: "pending", title: "Pending pcs" },
-        { field: "ordered", title: "Total ordered" },
-      ],
-    },
-    config: {
-      view: { stroke: "transparent" },
-      axis: {
-        labelColor: "#e5e5e5",
-        titleColor: "#e5e5e5",
-        gridColor: "#262626",
-      },
-    },
-  }),
-  [itemPendingArray]
-);
-
-const fulfillmentSpec = useMemo(
-  () => ({
-    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-    description: "Orders by fulfilment band",
-    background: "transparent",
-    width: "container",
-    data: { values: fulfillmentBands },
-    mark: { type: "bar", tooltip: true },
-    encoding: {
-      x: {
-        field: "band",
-        type: "ordinal",
-        title: "Fulfilment band",
-      },
-      y: {
-        field: "count",
-        type: "quantitative",
-        title: "Orders",
-      },
-      color: {
-        field: "band",
-        type: "nominal",
-        scale: {
-          domain: ["0–25%", "25–75%", "75–99%", "100%"],
-          range: ["#ef4444", "#f59e0b", "#22c55e", "#38bdf8"],
+  const itemDemandSpec = useMemo(
+    () => ({
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      description: "Top items by ordered quantity",
+      background: "transparent",
+      width: "container",
+      data: { values: itemDemandArray },
+      mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
+      encoding: {
+        y: {
+          field: "item",
+          type: "ordinal",
+          sort: "-x",
+          title: null,
         },
-        legend: null,
+        x: {
+          field: "ordered",
+          type: "quantitative",
+          title: "Ordered qty (pcs)",
+        },
+        color: {
+          value: "#f5f5f5", // light bar on dark bg
+        },
+        tooltip: [
+          { field: "item", title: "Item" },
+          { field: "ordered", title: "Ordered pcs" },
+          { field: "dispatched", title: "Dispatched pcs" },
+          { field: "pending", title: "Pending pcs" },
+        ],
       },
-      tooltip: [
-        { field: "band", title: "Band" },
-        { field: "count", title: "Orders" },
-      ],
-    },
-    config: {
-      view: { stroke: "transparent" },
-      axis: {
-        labelColor: "#e5e5e5",
-        titleColor: "#e5e5e5",
-        gridColor: "#262626",
+      config: {
+        view: { stroke: "transparent" },
+        axis: {
+          labelColor: "#e5e5e5",
+          titleColor: "#e5e5e5",
+          gridColor: "#262626",
+        },
       },
-    },
-  }),
-  [fulfillmentBands]
-);
+    }),
+    [itemDemandArray]
+  );
+
+  const categoryDemandSpec = useMemo(
+    () => ({
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      description: "Demand by category",
+      background: "transparent",
+      width: "container",
+      data: { values: categoryDemandArray },
+      mark: { type: "bar", tooltip: true, cornerRadiusEnd: 2 },
+      encoding: {
+        x: {
+          field: "category",
+          type: "ordinal",
+          sort: "-y",
+          title: null,
+        },
+        y: {
+          field: "ordered",
+          type: "quantitative",
+          title: "Ordered qty (pcs)",
+        },
+        color: {
+          value: "#a855f7", // accent color
+        },
+        tooltip: [
+          { field: "category", title: "Category" },
+          { field: "ordered", title: "Ordered pcs" },
+          { field: "dispatched", title: "Dispatched pcs" },
+          { field: "pending", title: "Pending pcs" },
+        ],
+      },
+      config: {
+        view: { stroke: "transparent" },
+        axis: {
+          labelColor: "#e5e5e5",
+          titleColor: "#e5e5e5",
+          gridColor: "#262626",
+        },
+      },
+    }),
+    [categoryDemandArray]
+  );
+
+  const pendingItemsSpec = useMemo(
+    () => ({
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      description: "Top pending items",
+      background: "transparent",
+      width: "container",
+      data: { values: itemPendingArray },
+      mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
+      encoding: {
+        y: {
+          field: "item",
+          type: "ordinal",
+          sort: "-x",
+          title: null,
+        },
+        x: {
+          field: "pending",
+          type: "quantitative",
+          title: "Pending qty (pcs)",
+        },
+        color: {
+          value: "#f97316", // orange backlog
+        },
+        tooltip: [
+          { field: "item", title: "Item" },
+          { field: "pending", title: "Pending pcs" },
+          { field: "ordered", title: "Total ordered" },
+        ],
+      },
+      config: {
+        view: { stroke: "transparent" },
+        axis: {
+          labelColor: "#e5e5e5",
+          titleColor: "#e5e5e5",
+          gridColor: "#262626",
+        },
+      },
+    }),
+    [itemPendingArray]
+  );
+
+  const fulfillmentBands = useMemo(() => {
+    const bands = ["0–25%", "25–75%", "75–99%", "100%"];
+    return bands.map((b) => ({
+      band: b,
+      count: orderFulfillmentArray.filter((o) => o.band === b).length,
+    }));
+  }, [orderFulfillmentArray]);
+
   const fulfillmentSpec = useMemo(
     () => ({
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
       description: "Orders by fulfilment band",
+      background: "transparent",
+      width: "container",
       data: { values: fulfillmentBands },
       mark: { type: "bar", tooltip: true },
       encoding: {
@@ -459,6 +425,14 @@ const fulfillmentSpec = useMemo(
           { field: "band", title: "Band" },
           { field: "count", title: "Orders" },
         ],
+      },
+      config: {
+        view: { stroke: "transparent" },
+        axis: {
+          labelColor: "#e5e5e5",
+          titleColor: "#e5e5e5",
+          gridColor: "#262626",
+        },
       },
     }),
     [fulfillmentBands]
