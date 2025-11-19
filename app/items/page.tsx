@@ -69,10 +69,6 @@ export default function ItemsPage() {
       );
       setCategorySuggestions(cats as string[]);
 
-      // If no newCategory yet, default to first category suggestion if exists
-      if (!newCategory && cats.length > 0) {
-        setNewCategory(String(cats[0]));
-      }
     }
 
     setLoading(false);
