@@ -690,7 +690,7 @@ export default function OrderDetailPage() {
           }}
         >
           <img
-            src="/tycoon-logo.png"
+            src="/Tycoon_Logo.JPG"
             alt="Tycoon Logo"
             style={{ height: 32 }}
           />
