@@ -82,6 +82,15 @@ type OrderWithLines = {
   }[];
 };
 
+const PRODUCTION_ACTIVE_STATUSES = [
+  "pending",
+  "submitted",
+  "in_production",
+  "packed",
+  "partially_dispatched",
+  // NOTE: intentionally NOT including 'dispatched', 'cancelled', 'draft'
+];
+
 // ---------- DASHBOARD PAGE ----------
 
 export default function DashboardPage() {
@@ -256,6 +265,7 @@ function setQuickRange(
     }[] = [];
 
     for (const o of filteredOrders) {
+      const isProductionActive = PRODUCTION_ACTIVE_STATUSES.includes(o.status);
       const lines = o.order_lines || [];
       for (const l of lines) {
         const item =
@@ -276,8 +286,8 @@ function setQuickRange(
         if (dispatched < 0) dispatched = 0;
         if (dispatched > ordered) dispatched = ordered;
 
-        const pending = Math.max(ordered - dispatched, 0);
-
+        const pending = isProductionActive ? pendingRaw : 0;
+        
         allLines.push({
           itemName: name,
           category,
