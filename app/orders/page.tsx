@@ -31,15 +31,15 @@ function getStatusSuggestion(status: string, fulfil: number) {
   const st = status || "pending";
 
   if (fulfil === 100 && st !== "dispatched") {
-    return "⚠ Order looks fully dispatched — consider marking as 'dispatched'";
+    return "⚠ Order looks fully dispatched — consider marking as 'dispatched' on the detail page.";
   }
 
   if (fulfil > 0 && fulfil < 100 && st === "pending") {
-    return "⚠ Items have been dispatched — consider 'partially_dispatched'";
+    return "⚠ Items have been dispatched — consider 'partially_dispatched' on the detail page.";
   }
 
   if (fulfil >= 75 && st === "in_production") {
-    return "⚠ Most items dispatched — consider 'partially_dispatched' or 'dispatched'";
+    return "⚠ Most items dispatched — consider 'partially_dispatched' or 'dispatched' on the detail page.";
   }
 
   return "";
@@ -142,28 +142,6 @@ export default function OrdersPage() {
 
   function toggleExpand(orderId: string) {
     setExpandedOrderId((current) => (current === orderId ? null : orderId));
-  }
-
-  // Update order status from list
-  async function updateOrderStatus(orderId: string, newStatus: string) {
-    // Optimistic update
-    setOrders((prev) =>
-      (prev || []).map((o) =>
-        o.id === orderId ? { ...o, status: newStatus } : o
-      )
-    );
-
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: newStatus })
-      .eq("id", orderId);
-
-    if (error) {
-      console.error("Error updating order status", error);
-      alert("Error updating status. Please try again.");
-      // Reload to revert
-      loadOrders();
-    }
   }
 
   function formatDateLocal(d: Date): string {
@@ -700,6 +678,11 @@ export default function OrdersPage() {
             Math.min(order.fulfilmentPercent, 100)
           );
 
+          const suggestion = getStatusSuggestion(
+            order.status,
+            order.fulfilmentPercent
+          );
+
           return (
             <div
               key={order.id}
@@ -829,59 +812,40 @@ export default function OrdersPage() {
                   </div>
 
                   <div style={{ marginTop: 4 }}>
-                    <span style={{ marginRight: 4, opacity: 0.8 }}>Status:</span>
+                    <span style={{ marginRight: 4, opacity: 0.8 }}>
+                      Status:
+                    </span>
 
-                    {/* COLOURED PILL */}
+                    {/* COLOURED PILL (DISPLAY ONLY) */}
                     <span
                       style={{
                         padding: "2px 8px",
                         borderRadius: 999,
-                        background: STATUS_COLORS[order.status] || "#444",
-                        color: "#f9fafb",            // <— force light text
+                        background:
+                          STATUS_COLORS[order.status] || "#444",
+                        color: "#f9fafb",
                         fontSize: 10,
                         fontWeight: 600,
                         textTransform: "capitalize",
-                        marginRight: 6,
                       }}
                     >
                       {(order.status || "pending").replace("_", " ")}
                     </span>
+                  </div>
 
-                    {/* DROPDOWN */}
-                    <select
-                      value={order.status || "pending"}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                  {/* SUGGESTION TEXT (non-interactive) */}
+                  {suggestion && (
+                    <div
                       style={{
-                        padding: "2px 6px",
-                        borderRadius: 999,
-                        border: "1px solid #333",
-                        background: "#050505",
-                        color: "#f5f5f5",
-                        fontSize: 11,
+                        fontSize: 10,
+                        marginTop: 4,
+                        opacity: 0.7,
+                        color: "#fbbf24",
                       }}
                     >
-                      {STATUS_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* SUGGESTION TEXT */}
-                    {getStatusSuggestion(order.status, order.fulfilmentPercent) && (
-                      <div
-                        style={{
-                          fontSize: 10,
-                          marginTop: 4,
-                          opacity: 0.7,
-                          color: "#fbbf24",
-                        }}
-                      >
-                        {getStatusSuggestion(order.status, order.fulfilmentPercent)}
-                      </div>
-                    )}
-                  </div>
+                      {suggestion}
+                    </div>
+                  )}
                 </div>
               </button>
 
