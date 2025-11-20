@@ -70,6 +70,7 @@ export default function OrderDetailPage() {
           dispatched_qty,
           dealer_rate_at_order,
           line_total,
+          line_remarks,
           items (
             name,
             category
@@ -126,6 +127,21 @@ export default function OrderDetailPage() {
     setOrder(updated);
   }
 
+  // Handle notes/line_remarks editing
+  function handleNoteChange(lineId: string, value: string) {
+    if (!order) return;
+
+    const updated = {
+      ...order,
+      order_lines: (order.order_lines || []).map((l: any) => {
+        if (l.id !== lineId) return l;
+        return { ...l, line_remarks: value };
+      }),
+    };
+
+    setOrder(updated);
+  }
+
   async function saveDispatch() {
     if (!order) return;
     setSavingDispatch(true);
@@ -146,9 +162,18 @@ export default function OrderDetailPage() {
         if (dispatched < 0) dispatched = 0;
         if (dispatched > max) dispatched = max;
 
+        const note =
+          typeof l.line_remarks === "string" &&
+          l.line_remarks.trim() !== ""
+            ? l.line_remarks.trim()
+            : null;
+
         const { error } = await supabase
           .from("order_lines")
-          .update({ dispatched_qty: dispatched })
+          .update({
+            dispatched_qty: dispatched,
+            line_remarks: note,
+          })
           .eq("id", l.id);
 
         if (error) {
@@ -159,7 +184,7 @@ export default function OrderDetailPage() {
         }
       }
 
-      alert("Dispatch quantities updated.");
+      alert("Dispatch quantities and notes updated.");
       await loadOrder();
     } finally {
       setSavingDispatch(false);
@@ -353,89 +378,88 @@ export default function OrderDetailPage() {
     }
   }
 
-// ---------- WHATSAPP SUMMARY HELPERS (IMPROVED WITH NOTES) ----------
+  // ---------- WHATSAPP SUMMARY HELPERS (WITH NOTES) ----------
+  function buildWhatsAppText() {
+    const partyName = party?.name ?? "Unknown party";
+    const partyCity = party?.city ? ` (${party.city})` : "";
+    const orderDateText = order.order_date
+      ? new Date(order.order_date).toLocaleDateString("en-IN")
+      : "Not set";
+    const expectedText = order.expected_dispatch_date
+      ? new Date(order.expected_dispatch_date).toLocaleDateString("en-IN")
+      : "Not set";
 
-function buildWhatsAppText() {
-  const partyName = party?.name ?? "Unknown party";
-  const partyCity = party?.city ? ` (${party.city})` : "";
-  const orderDateText = order.order_date
-    ? new Date(order.order_date).toLocaleDateString("en-IN")
-    : "Not set";
-  const expectedText = order.expected_dispatch_date
-    ? new Date(order.expected_dispatch_date).toLocaleDateString("en-IN")
-    : "Not set";
+    let text = `*TYCOON ORDER SUMMARY*\n`;
+    text += `----------------------------------\n`;
+    text += `*Order:* ${displayCode}\n`;
+    text += `*Party:* ${partyName}${partyCity}\n`;
+    text += `*Order Date:* ${orderDateText}\n`;
+    text += `*Expected Dispatch:* ${expectedText}\n`;
+    text += `*Status:* ${statusLabel}\n`;
+    text += `*Fulfilment:* ${totalDispatched}/${totalOrdered} pcs (${fulfillmentPercent}%)\n`;
+    text += `----------------------------------\n\n`;
 
-  let text = `*TYCOON ORDER SUMMARY*\n`;
-  text += `----------------------------------\n`;
-  text += `*Order:* ${displayCode}\n`;
-  text += `*Party:* ${partyName}${partyCity}\n`;
-  text += `*Order Date:* ${orderDateText}\n`;
-  text += `*Expected Dispatch:* ${expectedText}\n`;
-  text += `*Status:* ${statusLabel}\n`;
-  text += `*Fulfilment:* ${totalDispatched}/${totalOrdered} pcs (${fulfillmentPercent}%)\n`;
-  text += `----------------------------------\n\n`;
+    text += `*ITEM DETAILS*\n`;
 
-  text += `*ITEM DETAILS*\n`;
+    lines.forEach((l: any) => {
+      const item =
+        Array.isArray(l.items) && l.items.length > 0 ? l.items[0] : l.items;
 
-  lines.forEach((l: any) => {
-    const item =
-      Array.isArray(l.items) && l.items.length > 0 ? l.items[0] : l.items;
+      const name = item?.name ?? "Unknown item";
+      const ordered = l.qty ?? 0;
 
-    const name = item?.name ?? "Unknown item";
-    const ordered = l.qty ?? 0;
+      const rawDispatched =
+        l.dispatched_qty === "" || l.dispatched_qty == null
+          ? 0
+          : Number(l.dispatched_qty);
 
-    const rawDispatched =
-      l.dispatched_qty === "" || l.dispatched_qty == null
-        ? 0
-        : Number(l.dispatched_qty);
+      let dispatched = Number.isNaN(rawDispatched) ? 0 : rawDispatched;
+      if (dispatched > ordered) dispatched = ordered;
+      const pending = Math.max(ordered - dispatched, 0);
 
-    let dispatched = Number.isNaN(rawDispatched) ? 0 : rawDispatched;
-    if (dispatched > ordered) dispatched = ordered;
-    const pending = Math.max(ordered - dispatched, 0);
+      const notes =
+        typeof l.line_remarks === "string" && l.line_remarks.trim() !== ""
+          ? l.line_remarks.trim()
+          : null;
 
-    const notes =
-      typeof l.notes === "string" && l.notes.trim() !== ""
-        ? l.notes.trim()
-        : null;
+      text += `• *${name}*\n`;
+      text += `  - Ordered: ${ordered} pcs\n`;
+      text += `  - Dispatched: ${dispatched} pcs\n`;
+      text += `  - Pending: ${pending} pcs\n`;
 
-    text += `• *${name}*\n`;
-    text += `  - Ordered: ${ordered} pcs\n`;
-    text += `  - Dispatched: ${dispatched} pcs\n`;
-    text += `  - Pending: ${pending} pcs\n`;
+      if (notes) {
+        text += `  - Notes: _${notes}_\n`;
+      }
 
-    if (notes) {
-      text += `  - Notes: _${notes}_\n`;
+      text += `\n`;
+    });
+
+    if (order.remarks) {
+      text += `----------------------------------\n`;
+      text += `*Order Remarks:*\n${order.remarks.trim()}\n\n`;
     }
 
-    text += `\n`;
-  });
+    text += `_Sent via Tycoon Order Portal_`;
 
-  if (order.remarks) {
-    text += `----------------------------------\n`;
-    text += `*Order Remarks:*\n${order.remarks.trim()}\n\n`;
+    return text;
   }
 
-  text += `_Sent via Tycoon Order Portal_`;
-
-  return text;
-}
-
-function shareOnWhatsApp() {
-  try {
-    const message = buildWhatsAppText();
-    const encoded = encodeURIComponent(message);
-    const url = `https://api.whatsapp.com/send?text=${encoded}`;
-    window.open(url, "_blank");
-  } catch (err) {
-    console.error("Error building WhatsApp message", err);
-    alert("Could not open WhatsApp. Check console for details.");
+  function shareOnWhatsApp() {
+    try {
+      const message = buildWhatsAppText();
+      const encoded = encodeURIComponent(message);
+      const url = `https://api.whatsapp.com/send?text=${encoded}`;
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Error building WhatsApp message", err);
+      alert("Could not open WhatsApp. Check console for details.");
+    }
   }
-}
 
   // ---------- RENDER ----------
   return (
     <>
-      {/* NORMAL DARK UI (unchanged) */}
+      {/* NORMAL DARK UI */}
       <div id="order-export-area">
         <h1 className="section-title">Order Detail</h1>
         <p className="section-subtitle">
@@ -651,7 +675,7 @@ function shareOnWhatsApp() {
           </div>
         )}
 
-        {/* ITEMS TABLE WITH DISPATCHED QTY */}
+        {/* ITEMS TABLE WITH DISPATCHED QTY + NOTES */}
         <div className="table-wrapper">
           <div className="table-header">
             <div className="table-title">Items in this order</div>
@@ -670,6 +694,7 @@ function shareOnWhatsApp() {
                 <th>Dispatched</th>
                 <th>Pending</th>
                 <th>Total</th>
+                <th>Notes</th>
               </tr>
             </thead>
             <tbody>
@@ -727,13 +752,33 @@ function shareOnWhatsApp() {
                     </td>
                     <td>{pending} pcs</td>
                     <td>₹ {(l.line_total ?? 0).toLocaleString("en-IN")}</td>
+                    <td>
+                      <input
+                        type="text"
+                        value={l.line_remarks ?? ""}
+                        onChange={(e) =>
+                          handleNoteChange(l.id, e.target.value)
+                        }
+                        placeholder="Colour / customisation…"
+                        style={{
+                          width: "100%",
+                          maxWidth: 220,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: "#050505",
+                          color: "#f5f5f5",
+                          fontSize: 12,
+                        }}
+                      />
+                    </td>
                   </tr>
                 );
               })}
 
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: 12 }}>
+                  <td colSpan={8} style={{ textAlign: "center", padding: 12 }}>
                     No line items found for this order.
                   </td>
                 </tr>
@@ -783,9 +828,7 @@ function shareOnWhatsApp() {
             >
               TYCOON ORDER PORTAL
             </div>
-            <div style={{ fontSize: 11, color: "#4b5563" }}>
-              Order Sheet
-            </div>
+            <div style={{ fontSize: 11, color: "#4b5563" }}>Order Sheet</div>
           </div>
         </div>
 
@@ -888,7 +931,7 @@ function shareOnWhatsApp() {
           </div>
         )}
 
-        {/* Items table – light theme, NO RATES / VALUES */}
+        {/* Items table – light theme, NO RATES / VALUES, notes under item */}
         <table
           style={{
             width: "100%",
@@ -940,6 +983,12 @@ function shareOnWhatsApp() {
 
               const pending = Math.max(ordered - dispatched, 0);
 
+              const notes =
+                typeof l.line_remarks === "string" &&
+                l.line_remarks.trim() !== ""
+                  ? l.line_remarks.trim()
+                  : null;
+
               return (
                 <tr key={l.id}>
                   <td
@@ -950,7 +999,18 @@ function shareOnWhatsApp() {
                       color: "#111827",
                     }}
                   >
-                    {item?.name ?? "Unknown item"}
+                    <div>{item?.name ?? "Unknown item"}</div>
+                    {notes && (
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 10,
+                          color: "#6b7280",
+                        }}
+                      >
+                        Notes: {notes}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{
@@ -1038,7 +1098,7 @@ function shareOnWhatsApp() {
           onClick={saveDispatch}
           disabled={savingDispatch}
         >
-          {savingDispatch ? "Saving…" : "Save dispatch quantities"}
+          {savingDispatch ? "Saving…" : "Save dispatch quantities + notes"}
         </button>
 
         <button
