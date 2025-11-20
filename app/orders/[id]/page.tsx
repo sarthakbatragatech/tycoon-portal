@@ -235,6 +235,18 @@ export default function OrderDetailPage() {
         return;
       }
 
+      // Ensure images (logo) in the print area are loaded before capture
+      const imgs = Array.from(element.getElementsByTagName("img"));
+      await Promise.all(
+        imgs.map((img) => {
+          if (img.complete) return Promise.resolve(null);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(null);
+            img.onerror = () => resolve(null);
+          });
+        })
+      );
+
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
@@ -652,7 +664,7 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen) */}
+      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, NO VALUES) */}
       <div
         id="order-export-print"
         style={{
@@ -759,10 +771,6 @@ export default function OrderDetailPage() {
                   : "Not set"}
               </div>
               <div>
-                Total: {order.total_qty ?? 0} pcs · ₹{" "}
-                {(order.total_value ?? 0).toLocaleString("en-IN")}
-              </div>
-              <div>
                 Dispatched: {totalDispatched} / {totalOrdered} pcs (
                 {fulfillmentPercent}%)
               </div>
@@ -801,7 +809,7 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* Items table – light theme, low ink */}
+        {/* Items table – light theme, NO RATES / VALUES */}
         <table
           style={{
             width: "100%",
@@ -811,29 +819,23 @@ export default function OrderDetailPage() {
         >
           <thead>
             <tr>
-              {[
-                "Item",
-                "Category",
-                "Rate",
-                "Ordered",
-                "Dispatched",
-                "Pending",
-                "Line total",
-              ].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    textAlign: "left",
-                    borderBottom: "1px solid #e5e7eb",
-                    padding: "6px 4px",
-                    fontWeight: 600,
-                    fontSize: 11,
-                    color: "#111827",
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
+              {["Item", "Category", "Ordered", "Dispatched", "Pending"].map(
+                (h) => (
+                  <th
+                    key={h}
+                    style={{
+                      textAlign: "left",
+                      borderBottom: "1px solid #e5e7eb",
+                      padding: "6px 4px",
+                      fontWeight: 600,
+                      fontSize: 11,
+                      color: "#111827",
+                    }}
+                  >
+                    {h}
+                  </th>
+                )
+              )}
             </tr>
           </thead>
           <tbody>
@@ -889,16 +891,6 @@ export default function OrderDetailPage() {
                       color: "#4b5563",
                     }}
                   >
-                    ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
-                  </td>
-                  <td
-                    style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
-                      fontSize: 11,
-                      color: "#4b5563",
-                    }}
-                  >
                     {ordered}
                   </td>
                   <td
@@ -921,16 +913,6 @@ export default function OrderDetailPage() {
                   >
                     {pending}
                   </td>
-                  <td
-                    style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
-                      fontSize: 11,
-                      color: "#111827",
-                    }}
-                  >
-                    ₹ {(l.line_total ?? 0).toLocaleString("en-IN")}
-                  </td>
                 </tr>
               );
             })}
@@ -938,7 +920,7 @@ export default function OrderDetailPage() {
             {lines.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={5}
                   style={{
                     textAlign: "center",
                     padding: 10,
