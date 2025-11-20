@@ -5,16 +5,16 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
-// NEW IMPORTS
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   submitted: "Submitted",
+  pending: "Pending",
   in_production: "In Production",
   packed: "Packed",
+  partially_dispatched: "Partially Dispatched",
   dispatched: "Dispatched",
   cancelled: "Cancelled",
 };
@@ -91,6 +91,7 @@ export default function OrderDetailPage() {
     setLoading(false);
   }
 
+  // Make dispatched_qty behave nicely: editable, can be empty, numeric only
   function handleDispatchedChange(lineId: string, value: string) {
     if (!order) return;
 
@@ -99,10 +100,12 @@ export default function OrderDetailPage() {
       order_lines: (order.order_lines || []).map((l: any) => {
         if (l.id !== lineId) return l;
 
+        // Allow fully empty input
         if (value.trim() === "") {
           return { ...l, dispatched_qty: "" };
         }
 
+        // Keep only digits
         const cleaned = value.replace(/[^\d]/g, "");
         if (cleaned === "") {
           return { ...l, dispatched_qty: "" };
@@ -131,6 +134,7 @@ export default function OrderDetailPage() {
       const lines = order.order_lines || [];
 
       for (const l of lines) {
+        // Convert "" / null to 0, clamp to [0, qty]
         const raw =
           l.dispatched_qty === "" || l.dispatched_qty == null
             ? 0
@@ -212,6 +216,7 @@ export default function OrderDetailPage() {
         return;
       }
 
+      // keep local order in sync
       setOrder({ ...order, expected_dispatch_date: value });
       alert("Expected dispatch date updated.");
     } finally {
@@ -219,8 +224,10 @@ export default function OrderDetailPage() {
     }
   }
 
-  // PDF EXPORT FUNCTION — WITH TYCOON BRANDED HEADER
+  // PDF EXPORT WITH TYCOON HEADER
   async function exportPDF() {
+    if (!order) return;
+
     const element = document.getElementById("order-export-area");
     if (!element) {
       alert("Error: export area not found.");
@@ -241,36 +248,36 @@ export default function OrderDetailPage() {
     const pdfWidth = pageWidth;
     const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-    // HEADER STRIP
     const headerHeight = 28;
     pdf.setFillColor(255, 255, 255);
     pdf.rect(0, 0, pageWidth, headerHeight, "F");
 
-    // LOAD LOGO
     const logoImg = new Image();
     logoImg.crossOrigin = "anonymous";
-    logoImg.src = "/tycoon-logo.png";
+    logoImg.src = "/tycoon-logo.png"; // ensure this is in /public
 
-    await new Promise((resolve) => (logoImg.onload = resolve));
+    await new Promise((resolve) => {
+      logoImg.onload = resolve;
+    });
 
-    pdf.addImage(logoImg, "PNG", 8, 4, 22, 22); // Logo size
+    pdf.addImage(logoImg, "PNG", 8, 4, 22, 22);
+
+    const displayCode = order.order_code || order.id;
+    const orderDateText = order.order_date
+      ? new Date(order.order_date).toLocaleDateString("en-IN")
+      : "Not set";
 
     pdf.setFontSize(14);
     pdf.setTextColor(20, 20, 20);
     pdf.text("Tycoon Order Sheet", 34, 12);
 
-    const orderDateText = order?.order_date
-      ? new Date(order.order_date).toLocaleDateString("en-IN")
-      : "Not set";
-
     pdf.setFontSize(10);
-    pdf.text(`Order Code: ${order?.order_code ?? order?.id}`, 34, 18);
+    pdf.text(`Order Code: ${displayCode}`, 34, 18);
     pdf.text(`Order Date: ${orderDateText}`, 34, 24);
 
-    // ADD MAIN CAPTURED CONTENT
     pdf.addImage(imgData, "JPEG", 0, headerHeight + 2, pdfWidth, pdfHeight);
 
-    const name = order?.order_code || order?.id || "order";
+    const name = order.order_code || order.id || "order";
     pdf.save(`Tycoon-${name}.pdf`);
   }
 
@@ -308,6 +315,7 @@ export default function OrderDetailPage() {
   const statusLabel = STATUS_LABELS[order.status] ?? order.status;
   const displayCode = order.order_code || order.id;
 
+  // Dispatch progress
   const totalOrdered = lines.reduce((sum, l: any) => sum + (l.qty ?? 0), 0);
   const totalDispatched = lines.reduce((sum, l: any) => {
     const raw =
@@ -341,7 +349,7 @@ export default function OrderDetailPage() {
 
   return (
     <>
-      {/* EXPORT WRAPPER */}
+      {/* everything inside here goes into the PDF image */}
       <div id="order-export-area">
         <h1 className="section-title">Order Detail</h1>
         <p className="section-subtitle">
@@ -355,7 +363,10 @@ export default function OrderDetailPage() {
             <div className="card-value" style={{ fontSize: 16 }}>
               {displayCode}
             </div>
-            <div className="card-meta" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <div
+              className="card-meta"
+              style={{ fontSize: 12, lineHeight: 1.5 }}
+            >
               Internal ID: <span style={{ fontSize: 11 }}>{order.id}</span>
               <br />
               <span style={{ display: "inline-block", marginTop: 6 }}>
@@ -386,9 +397,263 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* ... (ALL REMAINING CONTENT REMAINS IDENTICAL) ... */}
+          <div className="card">
+            <div className="card-label">Party</div>
+            <div className="card-value" style={{ fontSize: 16 }}>
+              {party?.name ?? "Unknown party"}
+            </div>
+            <div className="card-meta">
+              {party?.city ? party.city : "City not set"}
+            </div>
+          </div>
 
-          {/* REMARKS, ITEMS TABLE, etc., unchanged */}
+          <div className="card">
+            <div className="card-label">Dates</div>
+
+            {/* Order date (read-only) */}
+            <div
+              className="card-meta"
+              style={{ fontSize: 12, marginBottom: 6 }}
+            >
+              Order date:&nbsp;
+              {order.order_date
+                ? new Date(order.order_date).toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "2-digit",
+                  })
+                : "Not set"}
+            </div>
+
+            {/* Expected dispatch: editable */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                fontSize: 12,
+              }}
+            >
+              <span style={{ opacity: 0.8 }}>Expected dispatch date</span>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <input
+                  type="date"
+                  value={expectedDispatch}
+                  onChange={(e) => setExpectedDispatch(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #333",
+                    background: "#050505",
+                    color: "#f5f5f5",
+                    fontSize: 12,
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={saveExpectedDispatchDate}
+                  disabled={savingExpectedDate}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #f5f5f5",
+                    background: savingExpectedDate ? "#111827" : "#f5f5f5",
+                    color: savingExpectedDate ? "#9ca3af" : "#000",
+                    fontSize: 11,
+                    cursor: savingExpectedDate ? "default" : "pointer",
+                  }}
+                >
+                  {savingExpectedDate ? "Saving…" : "Save"}
+                </button>
+
+                {order.expected_dispatch_date && (
+                  <span style={{ opacity: 0.75 }}>
+                    Current:{" "}
+                    {new Date(order.expected_dispatch_date).toLocaleDateString(
+                      "en-IN",
+                      { day: "2-digit", month: "short", year: "2-digit" }
+                    )}
+                  </span>
+                )}
+
+                {isOverdue && (
+                  <span
+                    style={{
+                      background: "#ef4444",
+                      color: "#fff",
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      fontSize: 10,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Overdue
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-label">Totals</div>
+            <div className="card-value" style={{ fontSize: 16 }}>
+              {order.total_qty ?? 0} pcs · ₹
+              {(order.total_value ?? 0).toLocaleString("en-IN")}
+            </div>
+            <div className="card-meta">
+              Dispatched: {totalDispatched} / {totalOrdered} pcs
+            </div>
+
+            {/* Fulfilment bar */}
+            <div style={{ marginTop: 8 }}>
+              <div
+                style={{
+                  width: "100%",
+                  height: 6,
+                  borderRadius: 999,
+                  background: "#151515",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${fulfillmentPercent}%`,
+                    height: "100%",
+                    borderRadius: 999,
+                    background:
+                      fulfillmentPercent === 100 ? "#22c55e" : "#f5f5f5",
+                    transition: "width 0.2s ease-out",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  marginTop: 4,
+                  opacity: 0.8,
+                }}
+              >
+                {fulfillmentPercent}% fulfilled
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* REMARKS */}
+        {order.remarks && (
+          <div className="card" style={{ marginBottom: 18 }}>
+            <div className="card-label">Order Remarks</div>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: "#e0e0e0",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {order.remarks}
+            </div>
+          </div>
+        )}
+
+        {/* ITEMS TABLE WITH DISPATCHED QTY */}
+        <div className="table-wrapper">
+          <div className="table-header">
+            <div className="table-title">Items in this order</div>
+            <div className="table-filters">
+              {lines.length} line{lines.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: "24%" }}>Item</th>
+                <th>Category</th>
+                <th>Rate</th>
+                <th>Ordered</th>
+                <th>Dispatched</th>
+                <th>Pending</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l: any) => {
+                const item =
+                  Array.isArray(l.items) && l.items.length > 0
+                    ? l.items[0]
+                    : l.items;
+
+                const ordered = l.qty ?? 0;
+
+                const rawDispatched =
+                  l.dispatched_qty === "" || l.dispatched_qty == null
+                    ? 0
+                    : Number(l.dispatched_qty);
+
+                let dispatched = Number.isNaN(rawDispatched)
+                  ? 0
+                  : rawDispatched;
+
+                if (dispatched < 0) dispatched = 0;
+                if (dispatched > ordered) dispatched = ordered;
+
+                const pending = Math.max(ordered - dispatched, 0);
+
+                return (
+                  <tr key={l.id}>
+                    <td>{item?.name ?? "Unknown item"}</td>
+                    <td>{item?.category ?? "—"}</td>
+                    <td>
+                      ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
+                    </td>
+                    <td>{ordered} pcs</td>
+                    <td>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={
+                          l.dispatched_qty === "" ? "" : String(dispatched)
+                        }
+                        onChange={(e) =>
+                          handleDispatchedChange(l.id, e.target.value)
+                        }
+                        style={{
+                          width: 80,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: "#050505",
+                          color: "#f5f5f5",
+                          fontSize: 12,
+                        }}
+                      />
+                    </td>
+                    <td>{pending} pcs</td>
+                    <td>₹ {(l.line_total ?? 0).toLocaleString("en-IN")}</td>
+                  </tr>
+                );
+              })}
+
+              {lines.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: "center", padding: 12 }}>
+                    No line items found for this order.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -427,7 +692,6 @@ export default function OrderDetailPage() {
           {savingStatus ? "Saving status…" : "Save status"}
         </button>
 
-        {/* NEW PDF BUTTON */}
         <button
           className="pill-button"
           type="button"
