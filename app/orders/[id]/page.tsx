@@ -34,15 +34,30 @@ export default function OrderDetailPage() {
   const orderId = params?.id as string;
 
   const [order, setOrder] = useState<any | null>(null);
+  const [originalLines, setOriginalLines] = useState<any[]>([]);
+  const [originalStatus, setOriginalStatus] = useState<string | null>(null);
+
+  const [logs, setLogs] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [expectedDispatch, setExpectedDispatch] = useState("");
   const [savingExpectedDate, setSavingExpectedDate] = useState(false);
 
+  // For adding new lines
+  const [items, setItems] = useState<any[]>([]);
+  const [addingLine, setAddingLine] = useState(false);
+  const [newLineItemId, setNewLineItemId] = useState("");
+  const [newLineQty, setNewLineQty] = useState("");
+  const [newLineNote, setNewLineNote] = useState("");
+  const [savingNewLine, setSavingNewLine] = useState(false);
+
   useEffect(() => {
     if (!orderId) return;
     loadOrder();
+    loadItems();
+    loadLogs();
   }, [orderId]);
 
   async function loadOrder() {
@@ -50,7 +65,8 @@ export default function OrderDetailPage() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select(`
+      .select(
+        `
         id,
         order_code,
         order_date,
@@ -74,13 +90,9 @@ export default function OrderDetailPage() {
             name,
             category
           )
-        ),
-        order_logs (
-          id,
-          message,
-          created_at
         )
-      `)
+      `
+      )
       .eq("id", orderId)
       .single();
 
@@ -90,10 +102,46 @@ export default function OrderDetailPage() {
     } else {
       setOrder(data);
       setExpectedDispatch(data.expected_dispatch_date || "");
+      setOriginalLines(data.order_lines || []);
+      setOriginalStatus(data.status || null);
     }
 
     setLoading(false);
   }
+
+  async function loadItems() {
+    const { data, error } = await supabase
+      .from("items")
+      .select("id, name, category, dealer_rate")
+      .eq("is_active", true)
+      .order("name");
+
+    if (error) {
+      console.error("Error loading items", error);
+      setItems([]);
+    } else {
+      setItems(data || []);
+    }
+  }
+
+  async function loadLogs() {
+    if (!orderId) return;
+    const { data, error } = await supabase
+      .from("order_logs")
+      .select("id, message, created_at")
+      .eq("order_id", orderId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error("Error loading logs", error);
+      setLogs([]);
+    } else {
+      setLogs(data || []);
+    }
+  }
+
+  // ---------- INLINE EDIT HANDLERS ----------
 
   // Make dispatched_qty behave nicely: editable, can be empty, numeric only
   function handleDispatchedChange(lineId: string, value: string) {
@@ -130,7 +178,6 @@ export default function OrderDetailPage() {
     setOrder(updated);
   }
 
-  // Handle notes/line_remarks editing
   function handleNoteChange(lineId: string, value: string) {
     if (!order) return;
 
@@ -145,50 +192,7 @@ export default function OrderDetailPage() {
     setOrder(updated);
   }
 
-  // Delete a line from the order (with simple confirm + log)
-  async function deleteLine(lineId: string) {
-    if (!order) return;
-
-    const line = (order.order_lines || []).find((l: any) => l.id === lineId);
-    if (!line) return;
-
-    const item =
-      Array.isArray(line.items) && line.items.length > 0
-        ? line.items[0]
-        : line.items;
-
-    const itemName = item?.name ?? "Unknown item";
-    const orderedQty = line.qty ?? 0;
-
-    const ok = window.confirm(
-      `Delete this line from the order?\n\n${itemName} - ${orderedQty} pcs`
-    );
-    if (!ok) return;
-
-    const { error } = await supabase
-      .from("order_lines")
-      .delete()
-      .eq("id", lineId);
-
-    if (error) {
-      console.error("Error deleting line", lineId, error);
-      alert("Error deleting this line: " + error.message);
-      return;
-    }
-
-    // Log the deletion (best-effort)
-    const message = `Deleted line: ${itemName} (${orderedQty} pcs)`;
-    const { error: logError } = await supabase
-      .from("order_logs")
-      .insert([{ order_id: order.id, message }]);
-
-    if (logError) {
-      console.error("Error logging deletion", logError);
-      // don't block user on log failure
-    }
-
-    await loadOrder();
-  }
+  // ---------- SAVE DISPATCH + NOTES (WITH LOGS) ----------
 
   async function saveDispatch() {
     if (!order) return;
@@ -196,6 +200,7 @@ export default function OrderDetailPage() {
 
     try {
       const lines = order.order_lines || [];
+      const logsToInsert: { order_id: string; message: string }[] = [];
 
       for (const l of lines) {
         // Convert "" / null to 0, clamp to [0, qty]
@@ -210,17 +215,13 @@ export default function OrderDetailPage() {
         if (dispatched < 0) dispatched = 0;
         if (dispatched > max) dispatched = max;
 
-        const note =
-          typeof l.line_remarks === "string" &&
-          l.line_remarks.trim() !== ""
-            ? l.line_remarks.trim()
-            : null;
+        const newNote = (l.line_remarks || "").trim() || null;
 
         const { error } = await supabase
           .from("order_lines")
           .update({
             dispatched_qty: dispatched,
-            line_remarks: note,
+            line_remarks: newNote,
           })
           .eq("id", l.id);
 
@@ -230,14 +231,56 @@ export default function OrderDetailPage() {
           setSavingDispatch(false);
           return;
         }
+
+        // Find original line for logging
+        const orig = originalLines.find((ol: any) => ol.id === l.id) || {};
+        const origDispatched = orig.dispatched_qty ?? 0;
+        const origNote = (orig.line_remarks || "").trim();
+
+        const itemRel = l.items;
+        const item =
+          itemRel && Array.isArray(itemRel) && itemRel.length > 0
+            ? itemRel[0]
+            : itemRel || null;
+        const itemName = item?.name || "Unknown item";
+
+        // Log dispatched qty change
+        if (dispatched !== origDispatched) {
+          logsToInsert.push({
+            order_id: order.id,
+            message: `Updated dispatched qty for ${itemName}: ${origDispatched} → ${dispatched}`,
+          });
+        }
+
+        const newNoteStr = (newNote || "").trim();
+        if (origNote !== newNoteStr) {
+          logsToInsert.push({
+            order_id: order.id,
+            message: `Updated note for ${itemName}: "${origNote || "-"}" → "${
+              newNoteStr || "-"
+            }"`,
+          });
+        }
       }
 
-      alert("Dispatch quantities and notes updated.");
+      if (logsToInsert.length > 0) {
+        const { error: logError } = await supabase
+          .from("order_logs")
+          .insert(logsToInsert);
+        if (logError) {
+          console.error("Error inserting dispatch logs", logError);
+        }
+      }
+
+      alert("Dispatch quantities & notes updated.");
       await loadOrder();
+      await loadLogs();
     } finally {
       setSavingDispatch(false);
     }
   }
+
+  // ---------- STATUS CHANGE (WITH LOG) ----------
 
   function handleStatusChange(value: string) {
     if (!order) return;
@@ -249,9 +292,12 @@ export default function OrderDetailPage() {
     setSavingStatus(true);
 
     try {
+      const newStatus = order.status || "pending";
+      const prevStatus = originalStatus || order.status || "pending";
+
       const { error } = await supabase
         .from("orders")
-        .update({ status: order.status })
+        .update({ status: newStatus })
         .eq("id", order.id);
 
       if (error) {
@@ -261,12 +307,28 @@ export default function OrderDetailPage() {
         return;
       }
 
+      // log only if changed
+      if (newStatus !== prevStatus) {
+        const { error: logError } = await supabase.from("order_logs").insert([
+          {
+            order_id: order.id,
+            message: `Status changed: ${prevStatus} → ${newStatus}`,
+          },
+        ]);
+        if (logError) {
+          console.error("Error inserting status log", logError);
+        }
+      }
+
       alert("Order status updated.");
       await loadOrder();
+      await loadLogs();
     } finally {
       setSavingStatus(false);
     }
   }
+
+  // ---------- EXPECTED DISPATCH DATE ----------
 
   async function saveExpectedDispatchDate() {
     if (!order) return;
@@ -289,15 +351,148 @@ export default function OrderDetailPage() {
         return;
       }
 
-      // keep local order in sync
       setOrder({ ...order, expected_dispatch_date: value });
       alert("Expected dispatch date updated.");
+      await loadLogs(); // optional to log this later if you want
     } finally {
       setSavingExpectedDate(false);
     }
   }
 
-  // PDF EXPORT – uses a separate light, print-friendly layout
+  // ---------- DELETE LINE (WITH LOG) ----------
+
+  async function deleteLine(line: any) {
+    if (!order) return;
+    if (!confirm("Remove this item from the order?")) return;
+
+    const itemRel = line.items;
+    const item =
+      itemRel && Array.isArray(itemRel) && itemRel.length > 0
+        ? itemRel[0]
+        : itemRel || null;
+    const itemName = item?.name || "Unknown item";
+    const qty = line.qty ?? 0;
+
+    const { error } = await supabase
+      .from("order_lines")
+      .delete()
+      .eq("id", line.id);
+
+    if (error) {
+      console.error("Error deleting line", error);
+      alert("Could not delete line: " + error.message);
+      return;
+    }
+
+    const { error: logError } = await supabase.from("order_logs").insert([
+      {
+        order_id: order.id,
+        message: `Deleted line item: ${itemName} (${qty} pcs)`,
+      },
+    ]);
+    if (logError) {
+      console.error("Error inserting delete log", logError);
+    }
+
+    await loadOrder();
+    await loadLogs();
+  }
+
+  // ---------- ADD NEW LINE (WITH LOG) ----------
+
+  function handleNewLineQtyChange(value: string) {
+    if (value.trim() === "") {
+      setNewLineQty("");
+      return;
+    }
+    const cleaned = value.replace(/[^\d]/g, "");
+    if (cleaned === "") {
+      setNewLineQty("");
+      return;
+    }
+    const num = parseInt(cleaned, 10);
+    if (Number.isNaN(num) || num < 0) {
+      setNewLineQty("");
+      return;
+    }
+    setNewLineQty(String(num));
+  }
+
+  async function saveNewLine() {
+    if (!order) return;
+    if (!newLineItemId) {
+      alert("Select an item for the new line.");
+      return;
+    }
+    if (!newLineQty) {
+      alert("Enter quantity for the new line.");
+      return;
+    }
+
+    const qty = parseInt(newLineQty, 10);
+    if (!qty || qty <= 0) {
+      alert("Quantity must be greater than zero.");
+      return;
+    }
+
+    const item = items.find((i) => i.id === newLineItemId);
+    const rate = item?.dealer_rate ?? 0;
+    const lineTotal = rate * qty;
+    const note = newLineNote.trim() || null;
+
+    setSavingNewLine(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("order_lines")
+        .insert([
+          {
+            order_id: order.id,
+            item_id: newLineItemId,
+            qty,
+            dispatched_qty: 0,
+            dealer_rate_at_order: rate,
+            line_total: lineTotal,
+            line_remarks: note,
+          },
+        ])
+        .select("id");
+
+      if (error) {
+        console.error("Error adding new line", error);
+        alert("Error adding line: " + error.message);
+        setSavingNewLine(false);
+        return;
+      }
+
+      const itemName = item?.name || "Unknown item";
+      const msgBase = `Added line item: ${itemName} (${qty} pcs)`;
+      const message = note ? `${msgBase}, Note: "${note}"` : msgBase;
+
+      const { error: logError } = await supabase.from("order_logs").insert([
+        {
+          order_id: order.id,
+          message,
+        },
+      ]);
+      if (logError) {
+        console.error("Error inserting add-line log", logError);
+      }
+
+      setAddingLine(false);
+      setNewLineItemId("");
+      setNewLineQty("");
+      setNewLineNote("");
+
+      await loadOrder();
+      await loadLogs();
+    } finally {
+      setSavingNewLine(false);
+    }
+  }
+
+  // ---------- PDF EXPORT ----------
+
   async function exportPDF() {
     if (!order) return;
 
@@ -343,14 +538,7 @@ export default function OrderDetailPage() {
         pdfWidth = (imgProps.width * pdfHeight) / imgProps.height;
       }
 
-      pdf.addImage(
-        imgData,
-        "JPEG",
-        marginX,
-        marginY,
-        pdfWidth,
-        pdfHeight
-      );
+      pdf.addImage(imgData, "JPEG", marginX, marginY, pdfWidth, pdfHeight);
 
       const name = order.order_code || order.id || "order";
       pdf.save(`Tycoon-${name}.pdf`);
@@ -360,42 +548,25 @@ export default function OrderDetailPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <>
-        <h1 className="section-title">Order Detail</h1>
-        <p className="section-subtitle">Loading order…</p>
-      </>
-    );
-  }
-
-  if (!order) {
-    return (
-      <>
-        <h1 className="section-title">Order Detail</h1>
-        <p className="section-subtitle">Order not found.</p>
-        <button
-          className="pill-button"
-          type="button"
-          onClick={() => router.push("/orders")}
-        >
-          Back to orders
-        </button>
-      </>
-    );
-  }
+  // ---------- WHATSAPP SUMMARY (INCLUDES NOTES) ----------
 
   const party =
-    Array.isArray(order.parties) && order.parties.length > 0
+    order &&
+    Array.isArray(order.parties) &&
+    order.parties.length > 0
       ? order.parties[0]
-      : order.parties;
+      : order?.parties;
 
-  const lines = order.order_lines || [];
-  const statusLabel = STATUS_LABELS[order.status] ?? order.status;
-  const displayCode = order.order_code || order.id;
+  const lines = order?.order_lines || [];
+  const statusLabel = order
+    ? STATUS_LABELS[order.status] ?? order.status
+    : "";
+  const displayCode = order?.order_code || order?.id;
 
-  // Dispatch progress
-  const totalOrdered = lines.reduce((sum, l: any) => sum + (l.qty ?? 0), 0);
+  const totalOrdered = lines.reduce(
+    (sum, l: any) => sum + (l.qty ?? 0),
+    0
+  );
   const totalDispatched = lines.reduce((sum, l: any) => {
     const raw =
       l.dispatched_qty === "" || l.dispatched_qty == null
@@ -426,8 +597,9 @@ export default function OrderDetailPage() {
     }
   }
 
-  // ---------- WHATSAPP SUMMARY HELPERS (WITH NOTES) ----------
   function buildWhatsAppText() {
+    if (!order) return "";
+
     const partyName = party?.name ?? "Unknown party";
     const partyCity = party?.city ? ` (${party.city})` : "";
     const orderDateText = order.order_date
@@ -450,8 +622,11 @@ export default function OrderDetailPage() {
     text += `*ITEM DETAILS*\n`;
 
     lines.forEach((l: any) => {
+      const itemRel = l.items;
       const item =
-        Array.isArray(l.items) && l.items.length > 0 ? l.items[0] : l.items;
+        itemRel && Array.isArray(itemRel) && itemRel.length > 0
+          ? itemRel[0]
+          : itemRel || null;
 
       const name = item?.name ?? "Unknown item";
       const ordered = l.qty ?? 0;
@@ -461,12 +636,15 @@ export default function OrderDetailPage() {
           ? 0
           : Number(l.dispatched_qty);
 
-      let dispatched = Number.isNaN(rawDispatched) ? 0 : rawDispatched;
+      let dispatched = Number.isNaN(rawDispatched)
+        ? 0
+        : rawDispatched;
       if (dispatched > ordered) dispatched = ordered;
       const pending = Math.max(ordered - dispatched, 0);
 
       const notes =
-        typeof l.line_remarks === "string" && l.line_remarks.trim() !== ""
+        typeof l.line_remarks === "string" &&
+        l.line_remarks.trim() !== ""
           ? l.line_remarks.trim()
           : null;
 
@@ -474,11 +652,9 @@ export default function OrderDetailPage() {
       text += `  - Ordered: ${ordered} pcs\n`;
       text += `  - Dispatched: ${dispatched} pcs\n`;
       text += `  - Pending: ${pending} pcs\n`;
-
       if (notes) {
         text += `  - Notes: _${notes}_\n`;
       }
-
       text += `\n`;
     });
 
@@ -495,6 +671,7 @@ export default function OrderDetailPage() {
   function shareOnWhatsApp() {
     try {
       const message = buildWhatsAppText();
+      if (!message) return;
       const encoded = encodeURIComponent(message);
       const url = `https://api.whatsapp.com/send?text=${encoded}`;
       window.open(url, "_blank");
@@ -505,13 +682,40 @@ export default function OrderDetailPage() {
   }
 
   // ---------- RENDER ----------
+
+  if (loading) {
+    return (
+      <>
+        <h1 className="section-title">Order Detail</h1>
+        <p className="section-subtitle">Loading order…</p>
+      </>
+    );
+  }
+
+  if (!order) {
+    return (
+      <>
+        <h1 className="section-title">Order Detail</h1>
+        <p className="section-subtitle">Order not found.</p>
+        <button
+          className="pill-button"
+          type="button"
+          onClick={() => router.push("/orders")}
+        >
+          Back to orders
+        </button>
+      </>
+    );
+  }
+
   return (
     <>
       {/* NORMAL DARK UI */}
       <div id="order-export-area">
         <h1 className="section-title">Order Detail</h1>
         <p className="section-subtitle">
-          Full breakdown of this Tycoon order with status & dispatch tracking.
+          Full breakdown of this Tycoon order with status, notes & dispatch
+          tracking.
         </p>
 
         {/* TOP SUMMARY */}
@@ -636,10 +840,13 @@ export default function OrderDetailPage() {
                 {order.expected_dispatch_date && (
                   <span style={{ opacity: 0.75 }}>
                     Current:{" "}
-                    {new Date(order.expected_dispatch_date).toLocaleDateString(
-                      "en-IN",
-                      { day: "2-digit", month: "short", year: "2-digit" }
-                    )}
+                    {new Date(
+                      order.expected_dispatch_date
+                    ).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "2-digit",
+                    })}
                   </span>
                 )}
 
@@ -724,7 +931,7 @@ export default function OrderDetailPage() {
         )}
 
         {/* ITEMS TABLE WITH DISPATCHED QTY + NOTES + DELETE */}
-        <div className="table-wrapper">
+        <div className="card" style={{ marginBottom: 18 }}>
           <div className="table-header">
             <div className="table-title">Items in this order</div>
             <div className="table-filters">
@@ -732,190 +939,270 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: "24%" }}>Item</th>
-                <th>Category</th>
-                <th>Rate</th>
-                <th>Ordered</th>
-                <th>Dispatched</th>
-                <th>Pending</th>
-                <th>Total</th>
-                <th>Notes</th>
-                <th style={{ width: 40 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l: any) => {
-                const item =
-                  Array.isArray(l.items) && l.items.length > 0
-                    ? l.items[0]
-                    : l.items;
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th style={{ width: "22%" }}>Item</th>
+                  <th>Category</th>
+                  <th>Rate</th>
+                  <th>Ordered</th>
+                  <th>Dispatched</th>
+                  <th>Pending</th>
+                  <th>Notes</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l: any) => {
+                  const itemRel = l.items;
+                  const item =
+                    itemRel && Array.isArray(itemRel) && itemRel.length > 0
+                      ? itemRel[0]
+                      : itemRel || null;
 
-                const ordered = l.qty ?? 0;
+                  const ordered = l.qty ?? 0;
 
-                const rawDispatched =
-                  l.dispatched_qty === "" || l.dispatched_qty == null
+                  const rawDispatched =
+                    l.dispatched_qty === "" || l.dispatched_qty == null
+                      ? 0
+                      : Number(l.dispatched_qty);
+
+                  let dispatched = Number.isNaN(rawDispatched)
                     ? 0
-                    : Number(l.dispatched_qty);
+                    : rawDispatched;
 
-                let dispatched = Number.isNaN(rawDispatched)
-                  ? 0
-                  : rawDispatched;
+                  if (dispatched < 0) dispatched = 0;
+                  if (dispatched > ordered) dispatched = ordered;
 
-                if (dispatched < 0) dispatched = 0;
-                if (dispatched > ordered) dispatched = ordered;
+                  const pending = Math.max(ordered - dispatched, 0);
 
-                const pending = Math.max(ordered - dispatched, 0);
+                  return (
+                    <tr key={l.id}>
+                      <td>{item?.name ?? "Unknown item"}</td>
+                      <td>{item?.category ?? "—"}</td>
+                      <td>
+                        ₹{" "}
+                        {(l.dealer_rate_at_order ?? 0).toLocaleString(
+                          "en-IN"
+                        )}
+                      </td>
+                      <td>{ordered} pcs</td>
+                      <td>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={
+                            l.dispatched_qty === ""
+                              ? ""
+                              : String(dispatched)
+                          }
+                          onChange={(e) =>
+                            handleDispatchedChange(l.id, e.target.value)
+                          }
+                          style={{
+                            width: 80,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: "#050505",
+                            color: "#f5f5f5",
+                            fontSize: 12,
+                          }}
+                        />
+                      </td>
+                      <td>{pending} pcs</td>
+                      <td>
+                        <input
+                          type="text"
+                          value={l.line_remarks || ""}
+                          onChange={(e) =>
+                            handleNoteChange(l.id, e.target.value)
+                          }
+                          placeholder="Colour / customisation..."
+                          style={{
+                            width: "100%",
+                            padding: "4px 8px",
+                            borderRadius: 8,
+                            border: "1px solid #333",
+                            background: "#050505",
+                            color: "#f5f5f5",
+                            fontSize: 12,
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => deleteLine(l)}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: "transparent",
+                            color: "#aaa",
+                            fontSize: 12,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
 
-                return (
-                  <tr key={l.id}>
-                    <td>{item?.name ?? "Unknown item"}</td>
-                    <td>{item?.category ?? "—"}</td>
-                    <td>
-                      ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
-                    </td>
-                    <td>{ordered} pcs</td>
-                    <td>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={
-                          l.dispatched_qty === "" ? "" : String(dispatched)
-                        }
-                        onChange={(e) =>
-                          handleDispatchedChange(l.id, e.target.value)
-                        }
-                        style={{
-                          width: 80,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          border: "1px solid #333",
-                          background: "#050505",
-                          color: "#f5f5f5",
-                          fontSize: 12,
-                        }}
-                      />
-                    </td>
-                    <td>{pending} pcs</td>
-                    <td>₹ {(l.line_total ?? 0).toLocaleString("en-IN")}</td>
-                    <td>
-                      <input
-                        type="text"
-                        value={l.line_remarks ?? ""}
-                        onChange={(e) =>
-                          handleNoteChange(l.id, e.target.value)
-                        }
-                        placeholder="Colour / customisation…"
-                        style={{
-                          width: "100%",
-                          maxWidth: 220,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          border: "1px solid #333",
-                          background: "#050505",
-                          color: "#f5f5f5",
-                          fontSize: 12,
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => deleteLine(l.id)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 999,
-                          border: "1px solid #333",
-                          background: "transparent",
-                          color: "#aaa",
-                          cursor: "pointer",
-                        }}
-                      >
-                        ✕
-                      </button>
+                {lines.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      style={{ textAlign: "center", padding: 12 }}
+                    >
+                      No line items found for this order.
                     </td>
                   </tr>
-                );
-              })}
+                )}
+              </tbody>
+            </table>
+          </div>
 
-              {lines.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: "center", padding: 12 }}>
-                    No line items found for this order.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {/* ADD NEW LINE UI */}
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              justifyContent: "flex-end",
+            }}
+          >
+            {!addingLine && (
+              <button
+                type="button"
+                onClick={() => setAddingLine(true)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 999,
+                  border: "1px solid #fff",
+                  background: "transparent",
+                  color: "#fff",
+                  fontSize: 12,
+                }}
+              >
+                + Add line
+              </button>
+            )}
+
+            {addingLine && (
+              <div
+                style={{
+                  width: "100%",
+                  marginTop: 8,
+                  padding: 10,
+                  borderRadius: 12,
+                  border: "1px solid #333",
+                  background: "#050505",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  alignItems: "center",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ opacity: 0.8 }}>New line:</span>
+
+                <select
+                  value={newLineItemId}
+                  onChange={(e) => setNewLineItemId(e.target.value)}
+                  style={{
+                    minWidth: 180,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid #333",
+                    background: "#050505",
+                    color: "#f5f5f5",
+                  }}
+                >
+                  <option value="">Select item</option>
+                  {items.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={newLineQty}
+                  onChange={(e) => handleNewLineQtyChange(e.target.value)}
+                  placeholder="Qty"
+                  style={{
+                    width: 70,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid #333",
+                    background: "#050505",
+                    color: "#f5f5f5",
+                  }}
+                />
+
+                <input
+                  type="text"
+                  value={newLineNote}
+                  onChange={(e) => setNewLineNote(e.target.value)}
+                  placeholder="Notes (colour / customisation)"
+                  style={{
+                    flex: 1,
+                    minWidth: 160,
+                    padding: "4px 8px",
+                    borderRadius: 8,
+                    border: "1px solid #333",
+                    background: "#050505",
+                    color: "#f5f5f5",
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={saveNewLine}
+                  disabled={savingNewLine}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #fff",
+                    background: savingNewLine ? "#111827" : "#f5f5f5",
+                    color: savingNewLine ? "#9ca3af" : "#000",
+                    cursor: savingNewLine ? "default" : "pointer",
+                  }}
+                >
+                  {savingNewLine ? "Adding…" : "Save line"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingLine(false);
+                    setNewLineItemId("");
+                    setNewLineQty("");
+                    setNewLineNote("");
+                  }}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #333",
+                    background: "transparent",
+                    color: "#f5f5f5",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ACTIVITY LOG */}
-      <div className="card" style={{ marginTop: 24 }}>
-        <div className="card-label">Activity Log</div>
-
-        {(!order.order_logs || order.order_logs.length === 0) && (
-          <div style={{ fontSize: 12, opacity: 0.7, padding: "4px 0" }}>
-            No activity recorded for this order.
-          </div>
-        )}
-
-        {order.order_logs && order.order_logs.length > 0 && (
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              maxHeight: 240,
-              overflowY: "auto",
-              paddingRight: 8,
-            }}
-          >
-            {order.order_logs
-              .sort(
-                (a: any, b: any) =>
-                  new Date(b.created_at).getTime() -
-                  new Date(a.created_at).getTime()
-              )
-              .map((log: any) => (
-                <div
-                  key={log.id}
-                  style={{
-                    fontSize: 12,
-                    padding: "6px 8px",
-                    borderRadius: 6,
-                    background: "#111827",
-                    border: "1px solid #1f2937",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  <div style={{ opacity: 0.85 }}>{log.message}</div>
-                  <div
-                    style={{
-                      marginTop: 2,
-                      opacity: 0.5,
-                      fontSize: 10,
-                    }}
-                  >
-                    {new Date(log.created_at).toLocaleString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
-
-      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, NO VALUES, notes under item) */}
+      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, INCLUDES NOTES) */}
       <div
         id="order-export-print"
         style={{
@@ -955,7 +1242,9 @@ export default function OrderDetailPage() {
             >
               TYCOON ORDER PORTAL
             </div>
-            <div style={{ fontSize: 11, color: "#4b5563" }}>Order Sheet</div>
+            <div style={{ fontSize: 11, color: "#4b5563" }}>
+              Order Sheet
+            </div>
           </div>
         </div>
 
@@ -1007,7 +1296,9 @@ export default function OrderDetailPage() {
               <div>
                 Order date:{" "}
                 {order.order_date
-                  ? new Date(order.order_date).toLocaleDateString("en-IN")
+                  ? new Date(order.order_date).toLocaleDateString(
+                      "en-IN"
+                    )
                   : "Not set"}
               </div>
               <div>Status: {statusLabel}</div>
@@ -1058,7 +1349,7 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* Items table – light theme, NO RATES / VALUES, notes under item */}
+        {/* Items table – light theme, notes shown under item */}
         <table
           style={{
             width: "100%",
@@ -1089,10 +1380,11 @@ export default function OrderDetailPage() {
           </thead>
           <tbody>
             {lines.map((l: any) => {
+              const itemRel = l.items;
               const item =
-                Array.isArray(l.items) && l.items.length > 0
-                  ? l.items[0]
-                  : l.items;
+                itemRel && Array.isArray(itemRel) && itemRel.length > 0
+                  ? itemRel[0]
+                  : itemRel || null;
 
               const ordered = l.qty ?? 0;
 
@@ -1109,8 +1401,7 @@ export default function OrderDetailPage() {
               if (dispatched > ordered) dispatched = ordered;
 
               const pending = Math.max(ordered - dispatched, 0);
-
-              const notes =
+              const note =
                 typeof l.line_remarks === "string" &&
                 l.line_remarks.trim() !== ""
                   ? l.line_remarks.trim()
@@ -1127,15 +1418,16 @@ export default function OrderDetailPage() {
                     }}
                   >
                     <div>{item?.name ?? "Unknown item"}</div>
-                    {notes && (
+                    {note && (
                       <div
                         style={{
                           marginTop: 2,
                           fontSize: 10,
                           color: "#6b7280",
+                          fontStyle: "italic",
                         }}
                       >
-                        Notes: {notes}
+                        Note: {note}
                       </div>
                     )}
                   </td>
@@ -1225,7 +1517,9 @@ export default function OrderDetailPage() {
           onClick={saveDispatch}
           disabled={savingDispatch}
         >
-          {savingDispatch ? "Saving…" : "Save dispatch quantities + notes"}
+          {savingDispatch
+            ? "Saving…"
+            : "Save dispatch quantities & notes"}
         </button>
 
         <button
@@ -1258,6 +1552,64 @@ export default function OrderDetailPage() {
         >
           🟢 Share on WhatsApp
         </button>
+      </div>
+
+      {/* ACTIVITY LOG */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="card-label">Activity log</div>
+        {logs.length === 0 && (
+          <div
+            style={{
+              fontSize: 12,
+              opacity: 0.8,
+              marginTop: 4,
+            }}
+          >
+            No activity recorded yet.
+          </div>
+        )}
+
+        {logs.length > 0 && (
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              marginTop: 6,
+              fontSize: 12,
+              maxHeight: 260,
+              overflowY: "auto",
+            }}
+          >
+            {logs.map((log) => (
+              <li
+                key={log.id}
+                style={{
+                  padding: "4px 0",
+                  borderBottom: "1px solid #1f2933",
+                }}
+              >
+                <div
+                  style={{
+                    opacity: 0.75,
+                    fontSize: 10,
+                    marginBottom: 2,
+                  }}
+                >
+                  {log.created_at
+                    ? new Date(log.created_at).toLocaleString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : ""}
+                </div>
+                <div>{log.message}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </>
   );
