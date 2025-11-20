@@ -224,61 +224,63 @@ export default function OrderDetailPage() {
     }
   }
 
-  // PDF EXPORT WITH TYCOON HEADER
+  // PDF EXPORT – SIMPLE, NO LOGO (works even if logo path is wrong)
   async function exportPDF() {
     if (!order) return;
 
-    const element = document.getElementById("order-export-area");
-    if (!element) {
-      alert("Error: export area not found.");
-      return;
+    try {
+      const element = document.getElementById("order-export-area");
+      if (!element) {
+        alert("Error: export area not found.");
+        return;
+      }
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#000",
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgProps = pdf.getImageProperties(imgData);
+      let pdfWidth = pageWidth;
+      let pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      // If image taller than page, fit to height instead
+      if (pdfHeight > pageHeight - 30) {
+        pdfHeight = pageHeight - 30;
+        pdfWidth = (imgProps.width * pdfHeight) / imgProps.height;
+      }
+
+      // Simple header text
+      const displayCodeLocal = order.order_code || order.id;
+      const orderDateText = order.order_date
+        ? new Date(order.order_date).toLocaleDateString("en-IN")
+        : "Not set";
+
+      pdf.setFontSize(14);
+      pdf.setTextColor(20, 20, 20);
+      pdf.text("Tycoon Order Sheet", 10, 10);
+
+      pdf.setFontSize(10);
+      pdf.text(`Order Code: ${displayCodeLocal}`, 10, 16);
+      pdf.text(`Order Date: ${orderDateText}`, 10, 22);
+
+      const yStart = 28; // content starts below header
+
+      pdf.addImage(imgData, "JPEG", 0, yStart, pdfWidth, pdfHeight);
+
+      const name = order.order_code || order.id || "order";
+      pdf.save(`Tycoon-${name}.pdf`);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      alert("PDF export failed. Check console for details.");
     }
-
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#000",
-    });
-
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    const pdf = new jsPDF("p", "mm", "a4");
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const imgProps = pdf.getImageProperties(imgData);
-    const pdfWidth = pageWidth;
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-    const headerHeight = 28;
-    pdf.setFillColor(255, 255, 255);
-    pdf.rect(0, 0, pageWidth, headerHeight, "F");
-
-    const logoImg = new Image();
-    logoImg.crossOrigin = "anonymous";
-    logoImg.src = "/tycoon-logo.png"; // ensure this is in /public
-
-    await new Promise((resolve) => {
-      logoImg.onload = resolve;
-    });
-
-    pdf.addImage(logoImg, "PNG", 8, 4, 22, 22);
-
-    const displayCode = order.order_code || order.id;
-    const orderDateText = order.order_date
-      ? new Date(order.order_date).toLocaleDateString("en-IN")
-      : "Not set";
-
-    pdf.setFontSize(14);
-    pdf.setTextColor(20, 20, 20);
-    pdf.text("Tycoon Order Sheet", 34, 12);
-
-    pdf.setFontSize(10);
-    pdf.text(`Order Code: ${displayCode}`, 34, 18);
-    pdf.text(`Order Date: ${orderDateText}`, 34, 24);
-
-    pdf.addImage(imgData, "JPEG", 0, headerHeight + 2, pdfWidth, pdfHeight);
-
-    const name = order.order_code || order.id || "order";
-    pdf.save(`Tycoon-${name}.pdf`);
   }
 
   if (loading) {
