@@ -18,9 +18,9 @@ export default function PunchOrderPage() {
 
   // qty is kept as string so it can be truly empty
   const [lines, setLines] = useState<any[]>([
-    { lineId: "l1", itemId: "", qty: "" },
-    { lineId: "l2", itemId: "", qty: "" },
-    { lineId: "l3", itemId: "", qty: "" },
+    { lineId: "l1", itemId: "", qty: "", note: "" },
+    { lineId: "l2", itemId: "", qty: "", note: "" },
+    { lineId: "l3", itemId: "", qty: "", note: "" },
   ]);
 
   useEffect(() => {
@@ -58,7 +58,11 @@ export default function PunchOrderPage() {
     }
   }
 
-  function updateLine(id: string, field: "itemId" | "qty", value: string) {
+  function updateLine(
+    id: string,
+    field: "itemId" | "qty" | "note",
+    value: string
+  ) {
     setLines((prev) =>
       prev.map((l) => {
         if (l.lineId !== id) return l;
@@ -85,6 +89,11 @@ export default function PunchOrderPage() {
           return { ...l, qty: num };
         }
 
+        if (field === "note") {
+          return { ...l, note: value };
+        }
+
+        // itemId
         return { ...l, itemId: value };
       })
     );
@@ -93,7 +102,12 @@ export default function PunchOrderPage() {
   function addLine() {
     setLines((prev) => [
       ...prev,
-      { lineId: `l${prev.length + 1}`, itemId: "", qty: "" },
+      {
+        lineId: `l${prev.length + 1}`,
+        itemId: "",
+        qty: "",
+        note: "",
+      },
     ]);
   }
 
@@ -200,6 +214,10 @@ export default function PunchOrderPage() {
         qty: l.qty,
         dealer_rate_at_order: l.rate,
         line_total: l.total,
+        line_remarks:
+          l.note && String(l.note).trim() !== ""
+            ? String(l.note).trim()
+            : null,
       }));
 
     const { error: lineError } = await supabase
@@ -317,10 +335,11 @@ export default function PunchOrderPage() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "30%" }}>Item</th>
+              <th style={{ width: "26%" }}>Item</th>
               <th>Category</th>
               <th>Rate</th>
               <th style={{ width: 80 }}>Qty</th>
+              <th style={{ width: "22%" }}>Note</th>
               <th>Total</th>
               <th />
             </tr>
@@ -372,6 +391,25 @@ export default function PunchOrderPage() {
                     }}
                   />
                 </td>
+                <td>
+                  <input
+                    type="text"
+                    value={l.note ?? ""}
+                    onChange={(e) =>
+                      updateLine(l.lineId, "note", e.target.value)
+                    }
+                    placeholder="Colour / customization"
+                    style={{
+                      width: "100%",
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      border: "1px solid #333",
+                      background: "#050505",
+                      color: "#f5f5f5",
+                      fontSize: 12,
+                    }}
+                  />
+                </td>
                 <td>₹ {l.total.toLocaleString("en-IN")}</td>
                 <td>
                   <button
@@ -392,7 +430,7 @@ export default function PunchOrderPage() {
             ))}
 
             <tr>
-              <td colSpan={6} style={{ textAlign: "center", padding: 10 }}>
+              <td colSpan={7} style={{ textAlign: "center", padding: 10 }}>
                 <button
                   type="button"
                   onClick={addLine}

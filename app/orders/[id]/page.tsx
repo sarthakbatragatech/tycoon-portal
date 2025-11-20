@@ -70,6 +70,7 @@ export default function OrderDetailPage() {
           dispatched_qty,
           dealer_rate_at_order,
           line_total,
+          line_remarks,
           items (
             name,
             category
@@ -126,6 +127,22 @@ export default function OrderDetailPage() {
     setOrder(updated);
   }
 
+  // New: handle per-line note edits
+  function handleLineNoteChange(lineId: string, value: string) {
+    if (!order) return;
+
+    const updated = {
+      ...order,
+      order_lines: (order.order_lines || []).map((l: any) => {
+        if (l.id !== lineId) return l;
+        return { ...l, line_remarks: value };
+      }),
+    };
+
+    setOrder(updated);
+  }
+
+  // Save dispatched qty + notes together
   async function saveDispatch() {
     if (!order) return;
     setSavingDispatch(true);
@@ -146,9 +163,14 @@ export default function OrderDetailPage() {
         if (dispatched < 0) dispatched = 0;
         if (dispatched > max) dispatched = max;
 
+        const note =
+          l.line_remarks && String(l.line_remarks).trim() !== ""
+            ? String(l.line_remarks).trim()
+            : null;
+
         const { error } = await supabase
           .from("order_lines")
-          .update({ dispatched_qty: dispatched })
+          .update({ dispatched_qty: dispatched, line_remarks: note })
           .eq("id", l.id);
 
         if (error) {
@@ -159,7 +181,7 @@ export default function OrderDetailPage() {
         }
       }
 
-      alert("Dispatch quantities updated.");
+      alert("Dispatch quantities and notes updated.");
       await loadOrder();
     } finally {
       setSavingDispatch(false);
@@ -270,14 +292,7 @@ export default function OrderDetailPage() {
         pdfWidth = (imgProps.width * pdfHeight) / imgProps.height;
       }
 
-      pdf.addImage(
-        imgData,
-        "JPEG",
-        marginX,
-        marginY,
-        pdfWidth,
-        pdfHeight
-      );
+      pdf.addImage(imgData, "JPEG", marginX, marginY, pdfWidth, pdfHeight);
 
       const name = order.order_code || order.id || "order";
       pdf.save(`Tycoon-${name}.pdf`);
@@ -356,7 +371,7 @@ export default function OrderDetailPage() {
   // ---------- RENDER ----------
   return (
     <>
-      {/* NORMAL DARK UI (unchanged) */}
+      {/* NORMAL DARK UI (unchanged base, with new Note column) */}
       <div id="order-export-area">
         <h1 className="section-title">Order Detail</h1>
         <p className="section-subtitle">
@@ -572,7 +587,7 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ITEMS TABLE WITH DISPATCHED QTY */}
+        {/* ITEMS TABLE WITH DISPATCHED QTY + NOTE */}
         <div className="table-wrapper">
           <div className="table-header">
             <div className="table-title">Items in this order</div>
@@ -584,12 +599,13 @@ export default function OrderDetailPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: "24%" }}>Item</th>
+                <th style={{ width: "22%" }}>Item</th>
                 <th>Category</th>
                 <th>Rate</th>
                 <th>Ordered</th>
                 <th>Dispatched</th>
                 <th>Pending</th>
+                <th style={{ width: "22%" }}>Note</th>
                 <th>Total</th>
               </tr>
             </thead>
@@ -647,6 +663,25 @@ export default function OrderDetailPage() {
                       />
                     </td>
                     <td>{pending} pcs</td>
+                    <td>
+                      <input
+                        type="text"
+                        value={l.line_remarks ?? ""}
+                        onChange={(e) =>
+                          handleLineNoteChange(l.id, e.target.value)
+                        }
+                        placeholder="Colour / custom note"
+                        style={{
+                          width: "100%",
+                          padding: "4px 8px",
+                          borderRadius: 8,
+                          border: "1px solid #333",
+                          background: "#050505",
+                          color: "#f5f5f5",
+                          fontSize: 12,
+                        }}
+                      />
+                    </td>
                     <td>₹ {(l.line_total ?? 0).toLocaleString("en-IN")}</td>
                   </tr>
                 );
@@ -654,7 +689,7 @@ export default function OrderDetailPage() {
 
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: 12 }}>
+                  <td colSpan={8} style={{ textAlign: "center", padding: 12 }}>
                     No line items found for this order.
                   </td>
                 </tr>
@@ -664,7 +699,7 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, NO VALUES) */}
+      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, includes Note, no values) */}
       <div
         id="order-export-print"
         style={{
@@ -704,9 +739,7 @@ export default function OrderDetailPage() {
             >
               TYCOON ORDER PORTAL
             </div>
-            <div style={{ fontSize: 11, color: "#4b5563" }}>
-              Order Sheet
-            </div>
+            <div style={{ fontSize: 11, color: "#4b5563" }}>Order Sheet</div>
           </div>
         </div>
 
@@ -809,7 +842,7 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* Items table – light theme, NO RATES / VALUES */}
+        {/* Items table – light theme, includes Note, NO RATES / VALUES */}
         <table
           style={{
             width: "100%",
@@ -819,23 +852,28 @@ export default function OrderDetailPage() {
         >
           <thead>
             <tr>
-              {["Item", "Category", "Ordered", "Dispatched", "Pending"].map(
-                (h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: "left",
-                      borderBottom: "1px solid #e5e7eb",
-                      padding: "6px 4px",
-                      fontWeight: 600,
-                      fontSize: 11,
-                      color: "#111827",
-                    }}
-                  >
-                    {h}
-                  </th>
-                )
-              )}
+              {[
+                "Item",
+                "Category",
+                "Ordered",
+                "Dispatched",
+                "Pending",
+                "Note",
+              ].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    textAlign: "left",
+                    borderBottom: "1px solid #e5e7eb",
+                    padding: "6px 4px",
+                    fontWeight: 600,
+                    fontSize: 11,
+                    color: "#111827",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -860,6 +898,10 @@ export default function OrderDetailPage() {
               if (dispatched > ordered) dispatched = ordered;
 
               const pending = Math.max(ordered - dispatched, 0);
+              const note =
+                l.line_remarks && String(l.line_remarks).trim() !== ""
+                  ? String(l.line_remarks).trim()
+                  : "";
 
               return (
                 <tr key={l.id}>
@@ -913,6 +955,16 @@ export default function OrderDetailPage() {
                   >
                     {pending}
                   </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#4b5563",
+                    }}
+                  >
+                    {note}
+                  </td>
                 </tr>
               );
             })}
@@ -920,7 +972,7 @@ export default function OrderDetailPage() {
             {lines.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   style={{
                     textAlign: "center",
                     padding: 10,
@@ -959,7 +1011,7 @@ export default function OrderDetailPage() {
           onClick={saveDispatch}
           disabled={savingDispatch}
         >
-          {savingDispatch ? "Saving…" : "Save dispatch quantities"}
+          {savingDispatch ? "Saving…" : "Save dispatch & notes"}
         </button>
 
         <button
