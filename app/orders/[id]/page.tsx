@@ -50,8 +50,7 @@ export default function OrderDetailPage() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select(
-        `
+      .select(`
         id,
         order_code,
         order_date,
@@ -75,9 +74,13 @@ export default function OrderDetailPage() {
             name,
             category
           )
+        ),
+        order_logs (
+          id,
+          message,
+          created_at
         )
-      `
-      )
+      `)
       .eq("id", orderId)
       .single();
 
@@ -848,6 +851,68 @@ export default function OrderDetailPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ACTIVITY LOG */}
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-label">Activity Log</div>
+
+        {(!order.order_logs || order.order_logs.length === 0) && (
+          <div style={{ fontSize: 12, opacity: 0.7, padding: "4px 0" }}>
+            No activity recorded for this order.
+          </div>
+        )}
+
+        {order.order_logs && order.order_logs.length > 0 && (
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              maxHeight: 240,
+              overflowY: "auto",
+              paddingRight: 8,
+            }}
+          >
+            {order.order_logs
+              .sort(
+                (a: any, b: any) =>
+                  new Date(b.created_at).getTime() -
+                  new Date(a.created_at).getTime()
+              )
+              .map((log: any) => (
+                <div
+                  key={log.id}
+                  style={{
+                    fontSize: 12,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    background: "#111827",
+                    border: "1px solid #1f2937",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div style={{ opacity: 0.85 }}>{log.message}</div>
+                  <div
+                    style={{
+                      marginTop: 2,
+                      opacity: 0.5,
+                      fontSize: 10,
+                    }}
+                  >
+                    {new Date(log.created_at).toLocaleString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, NO VALUES, notes under item) */}
