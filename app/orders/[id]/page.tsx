@@ -353,69 +353,84 @@ export default function OrderDetailPage() {
     }
   }
 
-  // -------- WHATSAPP SUMMARY HELPERS --------
+// ---------- WHATSAPP SUMMARY HELPERS (IMPROVED WITH NOTES) ----------
 
-  function buildWhatsAppText() {
-    const partyName = party?.name ?? "Unknown party";
-    const partyCity = party?.city ? ` (${party.city})` : "";
+function buildWhatsAppText() {
+  const partyName = party?.name ?? "Unknown party";
+  const partyCity = party?.city ? ` (${party.city})` : "";
+  const orderDateText = order.order_date
+    ? new Date(order.order_date).toLocaleDateString("en-IN")
+    : "Not set";
+  const expectedText = order.expected_dispatch_date
+    ? new Date(order.expected_dispatch_date).toLocaleDateString("en-IN")
+    : "Not set";
 
-    const orderDateText = order.order_date
-      ? new Date(order.order_date).toLocaleDateString("en-IN")
-      : "Not set";
+  let text = `*TYCOON ORDER SUMMARY*\n`;
+  text += `----------------------------------\n`;
+  text += `*Order:* ${displayCode}\n`;
+  text += `*Party:* ${partyName}${partyCity}\n`;
+  text += `*Order Date:* ${orderDateText}\n`;
+  text += `*Expected Dispatch:* ${expectedText}\n`;
+  text += `*Status:* ${statusLabel}\n`;
+  text += `*Fulfilment:* ${totalDispatched}/${totalOrdered} pcs (${fulfillmentPercent}%)\n`;
+  text += `----------------------------------\n\n`;
 
-    const expectedText = order.expected_dispatch_date
-      ? new Date(order.expected_dispatch_date).toLocaleDateString("en-IN")
-      : "Not set";
+  text += `*ITEM DETAILS*\n`;
 
-    let text = `Tycoon Order – ${displayCode}\n`;
-    text += `Party: ${partyName}${partyCity}\n`;
-    text += `Order date: ${orderDateText}\n`;
-    text += `Expected dispatch: ${expectedText}\n`;
-    text += `Status: ${statusLabel}\n`;
-    text += `Dispatched: ${totalDispatched}/${totalOrdered} pcs (${fulfillmentPercent}%)\n\n`;
+  lines.forEach((l: any) => {
+    const item =
+      Array.isArray(l.items) && l.items.length > 0 ? l.items[0] : l.items;
 
-    text += `Items:\n`;
-    lines.forEach((l: any) => {
-      const item =
-        Array.isArray(l.items) && l.items.length > 0
-          ? l.items[0]
-          : l.items;
+    const name = item?.name ?? "Unknown item";
+    const ordered = l.qty ?? 0;
 
-      const name = item?.name ?? "Unknown item";
-      const ordered = l.qty ?? 0;
-
-      const rawDispatched =
-        l.dispatched_qty === "" || l.dispatched_qty == null
-          ? 0
-          : Number(l.dispatched_qty);
-
-      let dispatched = Number.isNaN(rawDispatched)
+    const rawDispatched =
+      l.dispatched_qty === "" || l.dispatched_qty == null
         ? 0
-        : rawDispatched;
+        : Number(l.dispatched_qty);
 
-      if (dispatched < 0) dispatched = 0;
-      if (dispatched > ordered) dispatched = ordered;
+    let dispatched = Number.isNaN(rawDispatched) ? 0 : rawDispatched;
+    if (dispatched > ordered) dispatched = ordered;
+    const pending = Math.max(ordered - dispatched, 0);
 
-      const pending = Math.max(ordered - dispatched, 0);
+    const notes =
+      typeof l.notes === "string" && l.notes.trim() !== ""
+        ? l.notes.trim()
+        : null;
 
-      text += `• ${name} – ${ordered} pcs (Disp: ${dispatched}, Pend: ${pending})\n`;
-    });
+    text += `• *${name}*\n`;
+    text += `  - Ordered: ${ordered} pcs\n`;
+    text += `  - Dispatched: ${dispatched} pcs\n`;
+    text += `  - Pending: ${pending} pcs\n`;
 
-    text += `\nSent from Tycoon Order Portal`;
-    return text;
-  }
-
-  function shareOnWhatsApp() {
-    try {
-      const message = buildWhatsAppText();
-      const encoded = encodeURIComponent(message);
-      const url = `https://api.whatsapp.com/send?text=${encoded}`;
-      window.open(url, "_blank");
-    } catch (err) {
-      console.error("Error building WhatsApp message", err);
-      alert("Could not open WhatsApp. Check console for details.");
+    if (notes) {
+      text += `  - Notes: _${notes}_\n`;
     }
+
+    text += `\n`;
+  });
+
+  if (order.remarks) {
+    text += `----------------------------------\n`;
+    text += `*Order Remarks:*\n${order.remarks.trim()}\n\n`;
   }
+
+  text += `_Sent via Tycoon Order Portal_`;
+
+  return text;
+}
+
+function shareOnWhatsApp() {
+  try {
+    const message = buildWhatsAppText();
+    const encoded = encodeURIComponent(message);
+    const url = `https://api.whatsapp.com/send?text=${encoded}`;
+    window.open(url, "_blank");
+  } catch (err) {
+    console.error("Error building WhatsApp message", err);
+    alert("Could not open WhatsApp. Check console for details.");
+  }
+}
 
   // ---------- RENDER ----------
   return (
