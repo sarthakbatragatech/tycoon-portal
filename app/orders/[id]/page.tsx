@@ -1098,7 +1098,7 @@ export default function OrderDetailPage() {
           onClick={saveDispatch}
           disabled={savingDispatch}
         >
-          {savingDispatch ? "Saving…" : "Save dispatch quantities + notes"}
+          {savingDispatch ? "Saving…" : "Save dispatch qty. + notes"}
         </button>
 
         <button
