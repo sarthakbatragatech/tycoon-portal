@@ -286,8 +286,12 @@ function setQuickRange(
         if (dispatched < 0) dispatched = 0;
         if (dispatched > ordered) dispatched = ordered;
 
+        // 👇 compute raw pending first
+        const pendingRaw = Math.max(ordered - dispatched, 0);
+
+        // 👇 then zero it out for closed statuses
         const pending = isProductionActive ? pendingRaw : 0;
-        
+
         allLines.push({
           itemName: name,
           category,
