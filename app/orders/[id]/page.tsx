@@ -142,6 +142,51 @@ export default function OrderDetailPage() {
     setOrder(updated);
   }
 
+  // Delete a line from the order (with simple confirm + log)
+  async function deleteLine(lineId: string) {
+    if (!order) return;
+
+    const line = (order.order_lines || []).find((l: any) => l.id === lineId);
+    if (!line) return;
+
+    const item =
+      Array.isArray(line.items) && line.items.length > 0
+        ? line.items[0]
+        : line.items;
+
+    const itemName = item?.name ?? "Unknown item";
+    const orderedQty = line.qty ?? 0;
+
+    const ok = window.confirm(
+      `Delete this line from the order?\n\n${itemName} - ${orderedQty} pcs`
+    );
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("order_lines")
+      .delete()
+      .eq("id", lineId);
+
+    if (error) {
+      console.error("Error deleting line", lineId, error);
+      alert("Error deleting this line: " + error.message);
+      return;
+    }
+
+    // Log the deletion (best-effort)
+    const message = `Deleted line: ${itemName} (${orderedQty} pcs)`;
+    const { error: logError } = await supabase
+      .from("order_logs")
+      .insert([{ order_id: order.id, message }]);
+
+    if (logError) {
+      console.error("Error logging deletion", logError);
+      // don't block user on log failure
+    }
+
+    await loadOrder();
+  }
+
   async function saveDispatch() {
     if (!order) return;
     setSavingDispatch(true);
@@ -675,7 +720,7 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* ITEMS TABLE WITH DISPATCHED QTY + NOTES */}
+        {/* ITEMS TABLE WITH DISPATCHED QTY + NOTES + DELETE */}
         <div className="table-wrapper">
           <div className="table-header">
             <div className="table-title">Items in this order</div>
@@ -695,6 +740,7 @@ export default function OrderDetailPage() {
                 <th>Pending</th>
                 <th>Total</th>
                 <th>Notes</th>
+                <th style={{ width: 40 }} />
               </tr>
             </thead>
             <tbody>
@@ -772,13 +818,29 @@ export default function OrderDetailPage() {
                         }}
                       />
                     </td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => deleteLine(l.id)}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: "transparent",
+                          color: "#aaa",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
 
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: 12 }}>
+                  <td colSpan={9} style={{ textAlign: "center", padding: 12 }}>
                     No line items found for this order.
                   </td>
                 </tr>
@@ -788,7 +850,7 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, NO VALUES) */}
+      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen, NO VALUES, notes under item) */}
       <div
         id="order-export-print"
         style={{
@@ -1098,7 +1160,7 @@ export default function OrderDetailPage() {
           onClick={saveDispatch}
           disabled={savingDispatch}
         >
-          {savingDispatch ? "Saving…" : "Save dispatch qty. + notes"}
+          {savingDispatch ? "Saving…" : "Save dispatch quantities + notes"}
         </button>
 
         <button
