@@ -224,12 +224,12 @@ export default function OrderDetailPage() {
     }
   }
 
-  // PDF EXPORT – SIMPLE, NO LOGO (works even if logo path is wrong)
+  // PDF EXPORT – uses a separate light, print-friendly layout
   async function exportPDF() {
     if (!order) return;
 
     try {
-      const element = document.getElementById("order-export-area");
+      const element = document.getElementById("order-export-print");
       if (!element) {
         alert("Error: export area not found.");
         return;
@@ -238,7 +238,7 @@ export default function OrderDetailPage() {
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        backgroundColor: "#000",
+        backgroundColor: "#ffffff",
       });
 
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
@@ -248,32 +248,24 @@ export default function OrderDetailPage() {
       const pageHeight = pdf.internal.pageSize.getHeight();
 
       const imgProps = pdf.getImageProperties(imgData);
-      let pdfWidth = pageWidth;
+      const marginX = 10;
+      const marginY = 10;
+      let pdfWidth = pageWidth - marginX * 2;
       let pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-      // If image taller than page, fit to height instead
-      if (pdfHeight > pageHeight - 30) {
-        pdfHeight = pageHeight - 30;
+      if (pdfHeight > pageHeight - marginY * 2) {
+        pdfHeight = pageHeight - marginY * 2;
         pdfWidth = (imgProps.width * pdfHeight) / imgProps.height;
       }
 
-      // Simple header text
-      const displayCodeLocal = order.order_code || order.id;
-      const orderDateText = order.order_date
-        ? new Date(order.order_date).toLocaleDateString("en-IN")
-        : "Not set";
-
-      pdf.setFontSize(14);
-      pdf.setTextColor(20, 20, 20);
-      pdf.text("Tycoon Order Sheet", 10, 10);
-
-      pdf.setFontSize(10);
-      pdf.text(`Order Code: ${displayCodeLocal}`, 10, 16);
-      pdf.text(`Order Date: ${orderDateText}`, 10, 22);
-
-      const yStart = 28; // content starts below header
-
-      pdf.addImage(imgData, "JPEG", 0, yStart, pdfWidth, pdfHeight);
+      pdf.addImage(
+        imgData,
+        "JPEG",
+        marginX,
+        marginY,
+        pdfWidth,
+        pdfHeight
+      );
 
       const name = order.order_code || order.id || "order";
       pdf.save(`Tycoon-${name}.pdf`);
@@ -349,9 +341,10 @@ export default function OrderDetailPage() {
     }
   }
 
+  // ---------- RENDER ----------
   return (
     <>
-      {/* everything inside here goes into the PDF image */}
+      {/* NORMAL DARK UI (unchanged) */}
       <div id="order-export-area">
         <h1 className="section-title">Order Detail</h1>
         <p className="section-subtitle">
@@ -657,6 +650,308 @@ export default function OrderDetailPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* LIGHT PRINT-FRIENDLY LAYOUT (hidden off-screen) */}
+      <div
+        id="order-export-print"
+        style={{
+          position: "absolute",
+          left: "-9999px",
+          top: 0,
+          width: "800px",
+          backgroundColor: "#ffffff",
+          color: "#111827",
+          padding: "24px",
+          fontFamily:
+            "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          fontSize: "11px",
+        }}
+      >
+        {/* Header with logo + title */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            marginBottom: 8,
+            gap: 12,
+          }}
+        >
+          <img
+            src="/tycoon-logo.png"
+            alt="Tycoon Logo"
+            style={{ height: 32 }}
+          />
+          <div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                letterSpacing: 0.5,
+              }}
+            >
+              TYCOON ORDER PORTAL
+            </div>
+            <div style={{ fontSize: 11, color: "#4b5563" }}>
+              Order Sheet
+            </div>
+          </div>
+        </div>
+
+        <hr
+          style={{
+            border: 0,
+            borderTop: "1px solid #e5e7eb",
+            margin: "8px 0 16px",
+          }}
+        />
+
+        {/* Meta section */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 24,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                marginBottom: 4,
+              }}
+            >
+              Party details
+            </div>
+            <div style={{ fontSize: 11, color: "#374151" }}>
+              <div>{party?.name ?? "Unknown party"}</div>
+              <div>{party?.city ?? ""}</div>
+            </div>
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                marginBottom: 4,
+              }}
+            >
+              Order details
+            </div>
+            <div style={{ fontSize: 11, color: "#374151" }}>
+              <div>Order code: {displayCode}</div>
+              <div>
+                Order date:{" "}
+                {order.order_date
+                  ? new Date(order.order_date).toLocaleDateString("en-IN")
+                  : "Not set"}
+              </div>
+              <div>Status: {statusLabel}</div>
+              <div>
+                Expected dispatch:{" "}
+                {order.expected_dispatch_date
+                  ? new Date(
+                      order.expected_dispatch_date
+                    ).toLocaleDateString("en-IN")
+                  : "Not set"}
+              </div>
+              <div>
+                Total: {order.total_qty ?? 0} pcs · ₹{" "}
+                {(order.total_value ?? 0).toLocaleString("en-IN")}
+              </div>
+              <div>
+                Dispatched: {totalDispatched} / {totalOrdered} pcs (
+                {fulfillmentPercent}%)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Remarks (light) */}
+        {order.remarks && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "#374151",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 600,
+                marginBottom: 4,
+              }}
+            >
+              Remarks
+            </div>
+            <div
+              style={{
+                whiteSpace: "pre-wrap",
+                border: "1px solid #e5e7eb",
+                borderRadius: 4,
+                padding: 8,
+                backgroundColor: "#f9fafb",
+              }}
+            >
+              {order.remarks}
+            </div>
+          </div>
+        )}
+
+        {/* Items table – light theme, low ink */}
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            marginTop: 4,
+          }}
+        >
+          <thead>
+            <tr>
+              {[
+                "Item",
+                "Category",
+                "Rate",
+                "Ordered",
+                "Dispatched",
+                "Pending",
+                "Line total",
+              ].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    textAlign: "left",
+                    borderBottom: "1px solid #e5e7eb",
+                    padding: "6px 4px",
+                    fontWeight: 600,
+                    fontSize: 11,
+                    color: "#111827",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l: any) => {
+              const item =
+                Array.isArray(l.items) && l.items.length > 0
+                  ? l.items[0]
+                  : l.items;
+
+              const ordered = l.qty ?? 0;
+
+              const rawDispatched =
+                l.dispatched_qty === "" || l.dispatched_qty == null
+                  ? 0
+                  : Number(l.dispatched_qty);
+
+              let dispatched = Number.isNaN(rawDispatched)
+                ? 0
+                : rawDispatched;
+
+              if (dispatched < 0) dispatched = 0;
+              if (dispatched > ordered) dispatched = ordered;
+
+              const pending = Math.max(ordered - dispatched, 0);
+
+              return (
+                <tr key={l.id}>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#111827",
+                    }}
+                  >
+                    {item?.name ?? "Unknown item"}
+                  </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#4b5563",
+                    }}
+                  >
+                    {item?.category ?? "—"}
+                  </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#4b5563",
+                    }}
+                  >
+                    ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
+                  </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#4b5563",
+                    }}
+                  >
+                    {ordered}
+                  </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#4b5563",
+                    }}
+                  >
+                    {dispatched}
+                  </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#4b5563",
+                    }}
+                  >
+                    {pending}
+                  </td>
+                  <td
+                    style={{
+                      padding: "4px 4px",
+                      borderBottom: "1px solid #f3f4f6",
+                      fontSize: 11,
+                      color: "#111827",
+                    }}
+                  >
+                    ₹ {(l.line_total ?? 0).toLocaleString("en-IN")}
+                  </td>
+                </tr>
+              );
+            })}
+
+            {lines.length === 0 && (
+              <tr>
+                <td
+                  colSpan={7}
+                  style={{
+                    textAlign: "center",
+                    padding: 10,
+                    fontSize: 11,
+                    color: "#6b7280",
+                  }}
+                >
+                  No line items found for this order.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* ACTIONS */}
