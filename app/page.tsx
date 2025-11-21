@@ -78,6 +78,8 @@ type OrderWithLines = {
   order_lines: {
     qty: number | null;
     dispatched_qty: number | null | string;
+    dealer_rate_at_order: number | null;
+    line_total: number | null;
     items: { name: string | null; category: string | null } | any;
   }[];
 };
@@ -126,6 +128,8 @@ export default function DashboardPage() {
         order_lines (
           qty,
           dispatched_qty,
+          dealer_rate_at_order,
+          line_total,
           items (
             name,
             category
@@ -152,7 +156,7 @@ export default function DashboardPage() {
     return `${year}-${month}-${day}`;
   }
 
-function setQuickRange(
+  function setQuickRange(
     mode: "all" | "thisMonth" | "lastMonth" | "last90"
   ) {
     const today = new Date();
@@ -247,14 +251,31 @@ function setQuickRange(
     }
 
     result.totalOrders = filteredOrders.length;
-    result.totalQty = filteredOrders.reduce(
-      (sum, o) => sum + (o.total_qty ?? 0),
-      0
-    );
-    result.totalValue = filteredOrders.reduce(
-      (sum, o) => sum + Number(o.total_value ?? 0),
-      0
-    );
+
+    // 👇 Compute totalQty & totalValue from order_lines (line_total / rate * qty)
+    let grandQty = 0;
+    let grandValue = 0;
+
+    for (const o of filteredOrders) {
+      const lines = o.order_lines || [];
+
+      const orderQty = lines.reduce((sum, l) => sum + (l.qty ?? 0), 0);
+
+      const orderValue = lines.reduce((sum, l) => {
+        const qty = l.qty ?? 0;
+        const lineTotal =
+          typeof l.line_total === "number"
+            ? l.line_total
+            : (l.dealer_rate_at_order ?? 0) * qty;
+        return sum + lineTotal;
+      }, 0);
+
+      grandQty += orderQty;
+      grandValue += orderValue;
+    }
+
+    result.totalQty = grandQty;
+    result.totalValue = grandValue;
 
     const allLines: {
       itemName: string;
@@ -265,7 +286,9 @@ function setQuickRange(
     }[] = [];
 
     for (const o of filteredOrders) {
-      const isProductionActive = PRODUCTION_ACTIVE_STATUSES.includes(o.status);
+      const isProductionActive = PRODUCTION_ACTIVE_STATUSES.includes(
+        o.status
+      );
       const lines = o.order_lines || [];
       for (const l of lines) {
         const item =
@@ -868,7 +891,7 @@ function setQuickRange(
           <div className="card-value">
             ₹ {totalValue.toLocaleString("en-IN")}
           </div>
-          <div className="card-meta">From all orders</div>
+          <div className="card-meta">Calculated from line totals</div>
         </div>
 
         <div className="card">

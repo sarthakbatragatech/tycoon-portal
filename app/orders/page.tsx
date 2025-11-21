@@ -122,6 +122,8 @@ export default function OrdersPage() {
         order_lines (
           qty,
           dispatched_qty,
+          dealer_rate_at_order,
+          line_total,
           items (
             name
           )
@@ -254,6 +256,25 @@ export default function OrdersPage() {
           ? Math.round((dispatchedTotal / orderedTotal) * 100)
           : 0;
 
+      // Compute total value from lines (prefer line_total, fallback to rate * qty)
+      const totalValueFromLines = linesRaw.reduce((sum, l: any) => {
+        const qty = l.qty ?? 0;
+        const lineTotal =
+          typeof l.line_total === "number"
+            ? l.line_total
+            : (l.dealer_rate_at_order ?? 0) * qty;
+        return sum + lineTotal;
+      }, 0);
+
+      // If for some reason there are no lines / totals from lines are 0,
+      // fall back to existing header totals so old data still shows something.
+      const finalTotalQty =
+        orderedTotal > 0 ? orderedTotal : o.total_qty ?? 0;
+      const finalTotalValue =
+        totalValueFromLines > 0
+          ? totalValueFromLines
+          : Number(o.total_value ?? 0);
+
       const rawDateStr = o.order_date;
       const date = rawDateStr ? new Date(rawDateStr) : null;
       const orderDateLabel = date
@@ -303,8 +324,8 @@ export default function OrdersPage() {
         partyName: (party?.name || "Unknown party") as string,
         partyCity: (party?.city || "") as string,
         status: (o.status || "pending") as string,
-        totalQty: o.total_qty ?? orderedTotal,
-        totalValue: Number(o.total_value ?? 0),
+        totalQty: finalTotalQty,
+        totalValue: finalTotalValue,
         orderedTotal,
         dispatchedTotal,
         pendingTotal,
