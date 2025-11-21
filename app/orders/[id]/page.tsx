@@ -1359,7 +1359,7 @@ export default function OrderDetailPage() {
         >
           <thead>
             <tr>
-              {["Item", "Category", "Ordered", "Dispatched", "Pending"].map(
+              {["Item", "Ordered", "Dispatched", "Pending"].map(
                 (h) => (
                   <th
                     key={h}
@@ -1430,16 +1430,6 @@ export default function OrderDetailPage() {
                         Note: {note}
                       </div>
                     )}
-                  </td>
-                  <td
-                    style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
-                      fontSize: 11,
-                      color: "#4b5563",
-                    }}
-                  >
-                    {item?.category ?? "—"}
                   </td>
                   <td
                     style={{
