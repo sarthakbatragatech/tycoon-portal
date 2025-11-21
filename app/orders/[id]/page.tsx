@@ -521,8 +521,7 @@ export default function OrderDetailPage() {
     }
   }
 
-  // ---------- PDF EXPORT ----------
-
+// ---------- PDF EXPORT ----------
   async function exportPDF() {
     if (!order) return;
 
@@ -570,8 +569,34 @@ export default function OrderDetailPage() {
 
       pdf.addImage(imgData, "JPEG", marginX, marginY, pdfWidth, pdfHeight);
 
-      const name = order.order_code || order.id || "order";
-      pdf.save(`Tycoon-${name}.pdf`);
+      // ------- FILENAME LOGIC: include party name + order code -------
+
+      const orderCode = order.order_code || order.id || "order";
+
+      // Derive party from order (handles array or object)
+      const partyRel =
+        order &&
+        Array.isArray(order.parties) &&
+        order.parties.length > 0
+          ? order.parties[0]
+          : order.parties;
+
+      let partyNameRaw = "Party";
+      if (
+        partyRel &&
+        typeof partyRel.name === "string" &&
+        partyRel.name.trim() !== ""
+      ) {
+        partyNameRaw = partyRel.name.trim();
+      }
+
+      // Make party name safe for filenames
+      const safePartyName = partyNameRaw
+        .replace(/\s+/g, "_")          // spaces → _
+        .replace(/[^a-zA-Z0-9_-]/g, "") // strip weird chars
+        .slice(0, 40);                  // keep it reasonable length
+
+      pdf.save(`Tycoon-${safePartyName}-${orderCode}.pdf`);
     } catch (err) {
       console.error("PDF export failed:", err);
       alert("PDF export failed. Check console for details.");
