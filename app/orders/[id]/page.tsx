@@ -40,6 +40,8 @@ export default function OrderDetailPage() {
   const [logs, setLogs] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [orderRemarks, setOrderRemarks] = useState("");
+  const [savingRemarks, setSavingRemarks] = useState(false);
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [expectedDispatch, setExpectedDispatch] = useState("");
@@ -104,6 +106,7 @@ export default function OrderDetailPage() {
       setExpectedDispatch(data.expected_dispatch_date || "");
       setOriginalLines(data.order_lines || []);
       setOriginalStatus(data.status || null);
+      setOrderRemarks(data.remarks ?? "");
     }
 
     setLoading(false);
@@ -359,6 +362,33 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function saveRemarks() {
+    if (!order) return;
+    setSavingRemarks(true);
+
+    try {
+      const trimmed =
+        orderRemarks.trim() === "" ? null : orderRemarks.trim();
+
+      const { error } = await supabase
+        .from("orders")
+        .update({ remarks: trimmed })
+        .eq("id", order.id);
+
+      if (error) {
+        console.error("Error updating remarks", error);
+        alert("Error updating remarks: " + error.message);
+        return;
+      }
+
+      // keep local order in sync
+      setOrder({ ...order, remarks: trimmed });
+      alert("Remarks updated.");
+    } finally {
+      setSavingRemarks(false);
+    }
+  }
+
   // ---------- DELETE LINE (WITH LOG) ----------
 
   async function deleteLine(line: any) {
@@ -567,6 +597,20 @@ export default function OrderDetailPage() {
     (sum, l: any) => sum + (l.qty ?? 0),
     0
   );
+
+  // Compute total value from lines (prefer line_total, fallback to rate * qty)
+  const totalValueFromLines = lines.reduce((sum, l: any) => {
+    const qty = l.qty ?? 0;
+    const lineTotal =
+      typeof l.line_total === "number"
+        ? l.line_total
+        : (l.dealer_rate_at_order ?? 0) * qty;
+    return sum + lineTotal;
+  }, 0);
+
+  // For consistency, use lines for total qty too
+  const totalQtyFromLines = totalOrdered;
+
   const totalDispatched = lines.reduce((sum, l: any) => {
     const raw =
       l.dispatched_qty === "" || l.dispatched_qty == null
@@ -871,8 +915,8 @@ export default function OrderDetailPage() {
           <div className="card">
             <div className="card-label">Totals</div>
             <div className="card-value" style={{ fontSize: 16 }}>
-              {order.total_qty ?? 0} pcs · ₹
-              {(order.total_value ?? 0).toLocaleString("en-IN")}
+              {totalQtyFromLines} pcs · ₹
+              {totalValueFromLines.toLocaleString("en-IN")}
             </div>
             <div className="card-meta">
               Dispatched: {totalDispatched} / {totalOrdered} pcs
@@ -913,22 +957,66 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* REMARKS */}
-        {order.remarks && (
-          <div className="card" style={{ marginBottom: 18 }}>
-            <div className="card-label">Order Remarks</div>
-            <div
+        {/* REMARKS – editable */}
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="card-label">Order Remarks</div>
+
+          <textarea
+            value={orderRemarks}
+            onChange={(e) => setOrderRemarks(e.target.value)}
+            rows={3}
+            placeholder="Add any remarks for this order…"
+            style={{
+              width: "100%",
+              marginTop: 6,
+              fontSize: 12,
+              lineHeight: 1.5,
+              padding: 8,
+              borderRadius: 8,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              resize: "vertical",
+              whiteSpace: "pre-wrap",
+            }}
+          />
+
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              justifyContent: "flex-start",
+              gap: 8,
+              alignItems: "center",
+              fontSize: 11,
+            }}
+          >
+            <button
+              type="button"
+              onClick={saveRemarks}
+              disabled={savingRemarks}
               style={{
-                fontSize: 13,
-                lineHeight: 1.5,
-                color: "#e0e0e0",
-                whiteSpace: "pre-wrap",
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid #f5f5f5",
+                background: savingRemarks ? "#111827" : "#f5f5f5",
+                color: savingRemarks ? "#9ca3af" : "#000",
+                cursor: savingRemarks ? "default" : "pointer",
               }}
             >
-              {order.remarks}
-            </div>
+              {savingRemarks ? "Saving…" : "Save remarks"}
+            </button>
+
+            {order.remarks && (
+              <span style={{ opacity: 0.7 }}>
+                Last saved:{" "}
+                {order.remarks.length > 40
+                  ? order.remarks.slice(0, 40) + "…"
+                  : order.remarks}
+              </span>
+            )}
           </div>
-        )}
+        </div>
 
         {/* ITEMS TABLE WITH DISPATCHED QTY + NOTES + DELETE */}
         <div className="card" style={{ marginBottom: 18 }}>
