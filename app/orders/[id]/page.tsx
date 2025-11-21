@@ -1443,27 +1443,27 @@ export default function OrderDetailPage() {
             width: "100%",
             borderCollapse: "collapse",
             marginTop: 4,
+            border: "1px solid #d1d5db",
           }}
         >
           <thead>
             <tr>
-              {["Item", "Ordered", "Dispatched", "Pending"].map(
-                (h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: "left",
-                      borderBottom: "1px solid #e5e7eb",
-                      padding: "6px 4px",
-                      fontWeight: 600,
-                      fontSize: 11,
-                      color: "#111827",
-                    }}
-                  >
-                    {h}
-                  </th>
-                )
-              )}
+              {["Item", "Ordered", "Dispatched", "Pending"].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    textAlign: "left",
+                    border: "1px solid #d1d5db",
+                    padding: "6px 6px",
+                    fontWeight: 600,
+                    fontSize: 11,
+                    color: "#111827",
+                    backgroundColor: "#f3f4f6",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -1499,10 +1499,11 @@ export default function OrderDetailPage() {
                 <tr key={l.id}>
                   <td
                     style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
                       fontSize: 11,
                       color: "#111827",
+                      verticalAlign: "top",
                     }}
                   >
                     <div>{item?.name ?? "Unknown item"}</div>
@@ -1519,32 +1520,38 @@ export default function OrderDetailPage() {
                       </div>
                     )}
                   </td>
+
                   <td
                     style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
                       fontSize: 11,
                       color: "#4b5563",
+                      textAlign: "right",
                     }}
                   >
                     {ordered}
                   </td>
+
                   <td
                     style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
                       fontSize: 11,
                       color: "#4b5563",
+                      textAlign: "right",
                     }}
                   >
                     {dispatched}
                   </td>
+
                   <td
                     style={{
-                      padding: "4px 4px",
-                      borderBottom: "1px solid #f3f4f6",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
                       fontSize: 11,
                       color: "#4b5563",
+                      textAlign: "right",
                     }}
                   >
                     {pending}
