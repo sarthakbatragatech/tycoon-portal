@@ -67,6 +67,175 @@ function VegaLiteChart({
   );
 }
 
+type SalesPoint = {
+  date: string;   // "2025-01-23"
+  qty: number;    // total pcs that day
+  value: number;  // total value that day
+};
+
+function SalesChartCard() {
+  const [data, setData] = useState<SalesPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSales();
+  }, []);
+
+  async function loadSales() {
+    setLoading(true);
+    setError(null);
+
+    // last 60 days
+    const today = new Date();
+    const from = new Date();
+    from.setDate(today.getDate() - 59);
+    const fromISO = from.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const { data, error } = await supabase
+      .from("dispatch_events")
+      .select(
+        `
+        id,
+        dispatched_at,
+        dispatched_qty,
+        order_lines:order_line_id (
+          dealer_rate_at_order
+        )
+      `
+      )
+      .gte("dispatched_at", fromISO)
+      .order("dispatched_at", { ascending: true });
+
+    if (error) {
+      console.error("Error loading sales from dispatch_events", error);
+      setError("Could not load sales data.");
+      setData([]);
+      setLoading(false);
+      return;
+    }
+
+    const grouped: Record<string, { qty: number; value: number }> = {};
+
+    (data || []).forEach((row: any) => {
+      const dateStr = row.dispatched_at;
+      if (!dateStr) return;
+
+      const qty = Number(row.dispatched_qty ?? 0);
+      const rate = Number(
+        row.order_lines?.dealer_rate_at_order ?? 0
+      );
+      const val = qty * rate;
+
+      if (!grouped[dateStr]) {
+        grouped[dateStr] = { qty: 0, value: 0 };
+      }
+      grouped[dateStr].qty += qty;
+      grouped[dateStr].value += val;
+    });
+
+    // Turn into sorted array
+    const points: SalesPoint[] = Object.entries(grouped)
+      .map(([date, { qty, value }]) => ({
+        date,
+        qty,
+        value,
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    setData(points);
+    setLoading(false);
+  }
+
+  // Build Vega-Lite spec
+  const spec: any = {
+    width: "container",
+    height: 220,
+    data: { values: data },
+    encoding: {
+      x: {
+        field: "date",
+        type: "temporal",
+        title: "Dispatch date",
+        axis: { format: "%d %b" },
+      },
+    },
+    layer: [
+      {
+        mark: { type: "bar" },
+        encoding: {
+          y: {
+            field: "qty",
+            type: "quantitative",
+            title: "Pcs dispatched",
+          },
+          tooltip: [
+            { field: "date", type: "temporal", title: "Date" },
+            { field: "qty", type: "quantitative", title: "Pcs" },
+            {
+              field: "value",
+              type: "quantitative",
+              title: "Value (₹)",
+              format: ",.0f",
+            },
+          ],
+        },
+      },
+      {
+        mark: { type: "line", point: true },
+        encoding: {
+          y: {
+            field: "value",
+            type: "quantitative",
+            axis: {
+              title: "Value (₹)",
+            },
+          },
+        },
+      },
+    ],
+    resolve: { scale: { y: "independent" } },
+  };
+
+  return (
+    <div className="card">
+      <div className="card-label">
+        Dispatch-based sales (last 60 days)
+      </div>
+      <div className="card-meta" style={{ fontSize: 11, opacity: 0.7 }}>
+        Uses <code>dispatch_events</code> · pcs (bars) &amp; value (line)
+      </div>
+
+      {loading && (
+        <div style={{ fontSize: 12, marginTop: 8 }}>Loading…</div>
+      )}
+      {error && (
+        <div
+          style={{
+            fontSize: 12,
+            marginTop: 8,
+            color: "#fbbf24",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && data.length === 0 && (
+        <div style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>
+          No dispatch events in the last 60 days.
+        </div>
+      )}
+
+      {!loading && !error && data.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <VegaLiteChart spec={spec} height={240} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- TYPES ----------
 
 type OrderWithLines = {
@@ -966,7 +1135,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ROW 3: Backlog table */}
+          {/* ROW 3: Dispatch-based Sales */}
+          <div className="card-grid" style={{ marginBottom: 18 }}>
+            <SalesChartCard />
+          </div>
+
+          {/* ROW 4: Backlog table */}
           <div className="card" style={{ marginBottom: 18 }}>
             <div className="card-label">Backlog Table · Pending by Item</div>
             <div className="card-meta">
