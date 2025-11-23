@@ -28,6 +28,14 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+function getTodayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -46,6 +54,10 @@ export default function OrderDetailPage() {
   const [savingStatus, setSavingStatus] = useState(false);
   const [expectedDispatch, setExpectedDispatch] = useState("");
   const [savingExpectedDate, setSavingExpectedDate] = useState(false);
+  const [dispatchDate, setDispatchDate] = useState(getTodayISO());
+  const [dispatchedNow, setDispatchedNow] = useState<Record<string, string>>(
+    {}
+  );
 
   // For adding new lines
   const [items, setItems] = useState<any[]>([]);
@@ -107,6 +119,12 @@ export default function OrderDetailPage() {
       setOriginalLines(data.order_lines || []);
       setOriginalStatus(data.status || null);
       setOrderRemarks(data.remarks ?? "");
+
+      const initialDispatchedNow: Record<string, string> = {};
+      (data.order_lines || []).forEach((l: any) => {
+        initialDispatchedNow[l.id] = "";
+      });
+      setDispatchedNow(initialDispatchedNow);
     }
 
     setLoading(false);
@@ -146,39 +164,44 @@ export default function OrderDetailPage() {
 
   // ---------- INLINE EDIT HANDLERS ----------
 
-  // Make dispatched_qty behave nicely: editable, can be empty, numeric only
-  function handleDispatchedChange(lineId: string, value: string) {
+  // "Dispatched Now" is incremental: how many pcs dispatched on the chosen date.
+  function handleDispatchedNowChange(lineId: string, value: string) {
     if (!order) return;
 
-    const updated = {
-      ...order,
-      order_lines: (order.order_lines || []).map((l: any) => {
-        if (l.id !== lineId) return l;
+    // keep only digits
+    let cleaned = value.replace(/[^\d]/g, "");
+    if (cleaned === "") {
+      setDispatchedNow((prev) => ({
+        ...prev,
+        [lineId]: "",
+      }));
+      return;
+    }
 
-        // Allow fully empty input
-        if (value.trim() === "") {
-          return { ...l, dispatched_qty: "" };
-        }
+    let num = parseInt(cleaned, 10);
+    if (Number.isNaN(num) || num < 0) {
+      num = 0;
+    }
 
-        // Keep only digits
-        const cleaned = value.replace(/[^\d]/g, "");
-        if (cleaned === "") {
-          return { ...l, dispatched_qty: "" };
-        }
+    // Clamp to pending qty
+    const line = (order.order_lines || []).find((l: any) => l.id === lineId);
+    if (line) {
+      const ordered = line.qty ?? 0;
+      const rawDisp =
+        line.dispatched_qty === "" || line.dispatched_qty == null
+          ? 0
+          : Number(line.dispatched_qty);
+      let dispatchedSoFar = Number.isNaN(rawDisp) ? 0 : rawDisp;
+      if (dispatchedSoFar < 0) dispatchedSoFar = 0;
+      if (dispatchedSoFar > ordered) dispatchedSoFar = ordered;
+      const pending = Math.max(ordered - dispatchedSoFar, 0);
+      if (num > pending) num = pending;
+    }
 
-        let num = parseInt(cleaned, 10);
-        if (Number.isNaN(num) || num < 0) {
-          num = 0;
-        }
-
-        const max = l.qty ?? 0;
-        if (num > max) num = max;
-
-        return { ...l, dispatched_qty: num };
-      }),
-    };
-
-    setOrder(updated);
+    setDispatchedNow((prev) => ({
+      ...prev,
+      [lineId]: String(num),
+    }));
   }
 
   function handleNoteChange(lineId: string, value: string) {
@@ -195,51 +218,39 @@ export default function OrderDetailPage() {
     setOrder(updated);
   }
 
-  // ---------- SAVE DISPATCH + NOTES (WITH LOGS) ----------
+  // ---------- SAVE DISPATCH + NOTES (WITH LOGS + DISPATCH EVENTS) ----------
 
   async function saveDispatch() {
     if (!order) return;
     setSavingDispatch(true);
 
     try {
+      if (!dispatchDate) {
+        alert("Please choose a dispatch date.");
+        setSavingDispatch(false);
+        return;
+      }
       const lines = order.order_lines || [];
       const logsToInsert: { order_id: string; message: string }[] = [];
+      const dispatchEvents: {
+        order_id: string;
+        order_line_id: string;
+        dispatched_qty: number;
+        dispatched_at: string;
+      }[] = [];
+      const lineUpdates: {
+        id: string;
+        dispatched_qty: number;
+        line_remarks: string | null;
+      }[] = [];
+
+      let totalOrdered = 0;
+      let totalDispatchedAfter = 0;
+      let anyDispatched = false;
+      let allFull = true;
 
       for (const l of lines) {
-        // Convert "" / null to 0, clamp to [0, qty]
-        const raw =
-          l.dispatched_qty === "" || l.dispatched_qty == null
-            ? 0
-            : Number(l.dispatched_qty);
-
-        let dispatched = Number.isNaN(raw) ? 0 : raw;
-        const max = l.qty ?? 0;
-
-        if (dispatched < 0) dispatched = 0;
-        if (dispatched > max) dispatched = max;
-
-        const newNote = (l.line_remarks || "").trim() || null;
-
-        const { error } = await supabase
-          .from("order_lines")
-          .update({
-            dispatched_qty: dispatched,
-            line_remarks: newNote,
-          })
-          .eq("id", l.id);
-
-        if (error) {
-          console.error("Error updating line", l.id, error);
-          alert("Error updating some lines: " + error.message);
-          setSavingDispatch(false);
-          return;
-        }
-
-        // Find original line for logging
-        const orig = originalLines.find((ol: any) => ol.id === l.id) || {};
-        const origDispatched = orig.dispatched_qty ?? 0;
-        const origNote = (orig.line_remarks || "").trim();
-
+        const lineId = l.id as string;
         const itemRel = l.items;
         const item =
           itemRel && Array.isArray(itemRel) && itemRel.length > 0
@@ -247,37 +258,193 @@ export default function OrderDetailPage() {
             : itemRel || null;
         const itemName = item?.name || "Unknown item";
 
-        // Log dispatched qty change
-        if (dispatched !== origDispatched) {
+        const ordered = l.qty ?? 0;
+        const rawDisp =
+          l.dispatched_qty === "" || l.dispatched_qty == null
+            ? 0
+            : Number(l.dispatched_qty);
+        let dispatchedSoFar = Number.isNaN(rawDisp) ? 0 : rawDisp;
+        if (dispatchedSoFar < 0) dispatchedSoFar = 0;
+        if (dispatchedSoFar > ordered) dispatchedSoFar = ordered;
+        const pending = Math.max(ordered - dispatchedSoFar, 0);
+
+        // incremental dispatch today (or chosen date)
+        const deltaRaw =
+          dispatchedNow[lineId] === undefined
+            ? ""
+            : String(dispatchedNow[lineId]).trim();
+        const deltaClean = deltaRaw.replace(/[^\d]/g, "");
+        let delta = deltaClean === "" ? 0 : parseInt(deltaClean, 10);
+        if (Number.isNaN(delta) || delta < 0) delta = 0;
+
+        if (delta > pending) {
+          alert(
+            `Line "${itemName}": dispatching ${delta} pcs exceeds pending ${pending} pcs.`
+          );
+          setSavingDispatch(false);
+          return;
+        }
+
+        const newTotalDispatched = dispatchedSoFar + delta;
+
+        // notes
+        const newNoteStr =
+          typeof l.line_remarks === "string" ? l.line_remarks.trim() : "";
+        const newNote = newNoteStr === "" ? null : newNoteStr;
+
+        const orig =
+          originalLines.find((ol: any) => ol.id === lineId) || {};
+        const origDisp = orig.dispatched_qty ?? 0;
+        const origNoteStr =
+          typeof orig.line_remarks === "string"
+            ? orig.line_remarks.trim()
+            : "";
+        const origNote = origNoteStr === "" ? null : origNoteStr;
+
+        // Prepare dispatch event for this line if delta > 0
+        if (delta > 0) {
+          dispatchEvents.push({
+            order_id: order.id,
+            order_line_id: lineId,
+            dispatched_qty: delta,
+            dispatched_at: dispatchDate,
+          });
+
+          const msgDate = dispatchDate
+            ? new Date(dispatchDate).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "2-digit",
+              })
+            : "Unknown date";
+
           logsToInsert.push({
             order_id: order.id,
-            message: `Updated dispatched qty for ${itemName}: ${origDispatched} → ${dispatched}`,
+            message: `Dispatched ${delta} pcs of ${itemName} on ${msgDate}.`,
           });
         }
 
-        const newNoteStr = (newNote || "").trim();
-        if (origNote !== newNoteStr) {
-          logsToInsert.push({
-            order_id: order.id,
-            message: `Updated note for ${itemName}: "${origNote || "-"}" → "${
-              newNoteStr || "-"
-            }"`,
+        // Prepare line update if dispatch or note changed
+        const dispatchChanged = newTotalDispatched !== origDisp;
+        const noteChanged = (origNote || null) !== (newNote || null);
+
+        if (dispatchChanged || noteChanged) {
+          lineUpdates.push({
+            id: lineId,
+            dispatched_qty: newTotalDispatched,
+            line_remarks: newNote,
           });
+
+          if (noteChanged) {
+            logsToInsert.push({
+              order_id: order.id,
+              message: `Updated note for ${itemName}: "${
+                origNote || "-"
+              }" → "${newNote || "-"}"`,
+            });
+          }
+        }
+
+        // aggregate for status
+        totalOrdered += ordered;
+        totalDispatchedAfter += newTotalDispatched;
+        if (newTotalDispatched > 0) {
+          anyDispatched = true;
+        }
+        if (newTotalDispatched < (l.qty ?? 0)) {
+          allFull = false;
         }
       }
 
+      // 1) Insert dispatch events (if any)
+      if (dispatchEvents.length > 0) {
+        const { error: evErr } = await supabase
+          .from("dispatch_events")
+          .insert(dispatchEvents);
+        if (evErr) {
+          console.error("Error inserting dispatch_events", evErr);
+          alert("Error saving dispatch events: " + evErr.message);
+          setSavingDispatch(false);
+          return;
+        }
+      }
+
+      // 2) Update order_lines (dispatched_qty + notes)
+      for (const u of lineUpdates) {
+        const { error: updErr } = await supabase
+          .from("order_lines")
+          .update({
+            dispatched_qty: u.dispatched_qty,
+            line_remarks: u.line_remarks,
+          })
+          .eq("id", u.id);
+
+        if (updErr) {
+          console.error("Error updating line", u.id, updErr);
+          alert("Error updating some lines: " + updErr.message);
+          setSavingDispatch(false);
+          return;
+        }
+      }
+
+      // 3) Auto-update order status based on fulfilment
+      let newStatus = order.status || "pending";
+      const prevStatus = originalStatus || order.status || "pending";
+
+      if (totalOrdered > 0 && allFull) {
+        newStatus = "dispatched";
+      } else if (anyDispatched) {
+        // Move to partially_dispatched if we have any dispatches
+        if (
+          newStatus === "pending" ||
+          newStatus === "in_production" ||
+          newStatus === "packed"
+        ) {
+          newStatus = "partially_dispatched";
+        }
+      }
+
+      if (newStatus !== order.status) {
+        const { error: statusErr } = await supabase
+          .from("orders")
+          .update({ status: newStatus })
+          .eq("id", order.id);
+
+        if (statusErr) {
+          console.error("Error updating status", statusErr);
+          alert("Error updating order status: " + statusErr.message);
+          setSavingDispatch(false);
+          return;
+        }
+
+        logsToInsert.push({
+          order_id: order.id,
+          message: `Status changed: ${prevStatus} → ${newStatus}`,
+        });
+      }
+
+      // 4) Insert logs (if any)
       if (logsToInsert.length > 0) {
         const { error: logError } = await supabase
           .from("order_logs")
           .insert(logsToInsert);
         if (logError) {
-          console.error("Error inserting dispatch logs", logError);
+          console.error("Error inserting logs", logError);
         }
       }
 
-      alert("Dispatch quantities & notes updated.");
+      alert("Dispatch and notes updated.");
       await loadOrder();
       await loadLogs();
+
+      // Reset "dispatched now" inputs
+      setDispatchedNow((prev) => {
+        const next: Record<string, string> = {};
+        (order.order_lines || []).forEach((l: any) => {
+          next[l.id] = "";
+        });
+        return next;
+      });
     } finally {
       setSavingDispatch(false);
     }
@@ -521,7 +688,7 @@ export default function OrderDetailPage() {
     }
   }
 
-// ---------- PDF EXPORT ----------
+  // ---------- PDF EXPORT ----------
   async function exportPDF() {
     if (!order) return;
 
@@ -592,9 +759,9 @@ export default function OrderDetailPage() {
 
       // Make party name safe for filenames
       const safePartyName = partyNameRaw
-        .replace(/\s+/g, "_")          // spaces → _
+        .replace(/\s+/g, "_") // spaces → _
         .replace(/[^a-zA-Z0-9_-]/g, "") // strip weird chars
-        .slice(0, 40);                  // keep it reasonable length
+        .slice(0, 40); // keep it reasonable length
 
       pdf.save(`Tycoon-${safePartyName}-${orderCode}.pdf`);
     } catch (err) {
@@ -606,9 +773,7 @@ export default function OrderDetailPage() {
   // ---------- WHATSAPP SUMMARY (INCLUDES NOTES) ----------
 
   const party =
-    order &&
-    Array.isArray(order.parties) &&
-    order.parties.length > 0
+    order && Array.isArray(order.parties) && order.parties.length > 0
       ? order.parties[0]
       : order?.parties;
 
@@ -705,15 +870,12 @@ export default function OrderDetailPage() {
           ? 0
           : Number(l.dispatched_qty);
 
-      let dispatched = Number.isNaN(rawDispatched)
-        ? 0
-        : rawDispatched;
+      let dispatched = Number.isNaN(rawDispatched) ? 0 : rawDispatched;
       if (dispatched > ordered) dispatched = ordered;
       const pending = Math.max(ordered - dispatched, 0);
 
       const notes =
-        typeof l.line_remarks === "string" &&
-        l.line_remarks.trim() !== ""
+        typeof l.line_remarks === "string" && l.line_remarks.trim() !== ""
           ? l.line_remarks.trim()
           : null;
 
@@ -1052,6 +1214,39 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
+          <div
+            style={{
+              marginTop: 8,
+              marginBottom: 8,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              alignItems: "center",
+              justifyContent: "space-between",
+              fontSize: 12,
+            }}
+          >
+            <span style={{ opacity: 0.8 }}>
+              Enter "Dispatched Now" quantities for the selected date.
+            </span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ opacity: 0.8 }}>Dispatch date</span>
+              <input
+                type="date"
+                value={dispatchDate}
+                onChange={(e) => setDispatchDate(e.target.value)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "#050505",
+                  color: "#f5f5f5",
+                  fontSize: 12,
+                }}
+              />
+            </div>
+          </div>
+
           <div className="table-wrapper">
             <table className="table">
               <thead>
@@ -1062,6 +1257,7 @@ export default function OrderDetailPage() {
                   <th>Ordered</th>
                   <th>Dispatched</th>
                   <th>Pending</th>
+                  <th>Dispatched Now</th>
                   <th>Notes</th>
                   <th />
                 </tr>
@@ -1101,19 +1297,18 @@ export default function OrderDetailPage() {
                         )}
                       </td>
                       <td>{ordered} pcs</td>
+                      <td>{dispatched} pcs</td>
+                      <td>{pending} pcs</td>
                       <td>
                         <input
                           type="text"
                           inputMode="numeric"
                           pattern="[0-9]*"
-                          value={
-                            l.dispatched_qty === ""
-                              ? ""
-                              : String(dispatched)
-                          }
+                          value={dispatchedNow[l.id] ?? ""}
                           onChange={(e) =>
-                            handleDispatchedChange(l.id, e.target.value)
+                            handleDispatchedNowChange(l.id, e.target.value)
                           }
+                          placeholder="0"
                           style={{
                             width: 80,
                             padding: "4px 8px",
@@ -1125,7 +1320,6 @@ export default function OrderDetailPage() {
                           }}
                         />
                       </td>
-                      <td>{pending} pcs</td>
                       <td>
                         <input
                           type="text"
