@@ -154,9 +154,7 @@ export default function OrdersPage() {
   }
 
   // DATE QUICK RANGE HELPER (B)
-  function setQuickRange(
-    mode: "all" | "thisMonth" | "lastMonth" | "last90"
-  ) {
+  function setQuickRange(mode: "all" | "thisMonth" | "lastMonth" | "last90") {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -286,15 +284,12 @@ export default function OrdersPage() {
         : "No date";
 
       const orderCode =
-        (o.order_code && o.order_code !== "") ||
-        o.order_code === "0"
+        (o.order_code && o.order_code !== "") || o.order_code === "0"
           ? (o.order_code as string)
           : o.id.slice(0, 8);
 
       // Expected dispatch
-      const expectedRaw = (o as any).expected_dispatch_date as
-        | string
-        | null;
+      const expectedRaw = (o as any).expected_dispatch_date as string | null;
       const expectedDate = expectedRaw ? new Date(expectedRaw) : null;
 
       const expectedDispatchLabel = expectedDate
@@ -521,9 +516,7 @@ export default function OrdersPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <span style={{ opacity: 0.8 }}>Filter by order date:</span>
 
-          <div
-            style={{ display: "flex", gap: 6, alignItems: "center" }}
-          >
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ opacity: 0.7 }}>From</span>
             <input
               type="date"
@@ -539,9 +532,7 @@ export default function OrdersPage() {
             />
           </div>
 
-          <div
-            style={{ display: "flex", gap: 6, alignItems: "center" }}
-          >
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ opacity: 0.7 }}>To</span>
             <input
               type="date"
@@ -670,328 +661,340 @@ export default function OrdersPage() {
         <div className="card">
           <div className="card-label">No orders yet</div>
           <div style={{ fontSize: 13, opacity: 0.8 }}>
-            Punch an order from the <strong>Punch Order</strong> page to
-            see it here.
+            Punch an order from the <strong>Punch Order</strong> page to see it
+            here.
           </div>
         </div>
       )}
 
-      {!loading &&
-        enhancedOrders.length > 0 &&
-        visibleOrders.length === 0 && (
-          <div className="card">
-            <div className="card-label">
-              No orders match the current filters/search
-            </div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>
-              Try changing the date range, status, fulfilment, or search
-              text.
-            </div>
+      {!loading && enhancedOrders.length > 0 && visibleOrders.length === 0 && (
+        <div className="card">
+          <div className="card-label">
+            No orders match the current filters/search
           </div>
-        )}
+          <div style={{ fontSize: 13, opacity: 0.8 }}>
+            Try changing the date range, status, fulfilment, or search text.
+          </div>
+        </div>
+      )}
 
-      <div className="card-grid" style={{ flexDirection: "column", gap: 10 }}>
-        {visibleOrders.map((order) => {
-          const expanded = expandedOrderId === order.id;
-          const colour = fulfilmentColour(order.fulfilmentPercent);
-          const barWidth = Math.max(
-            4,
-            Math.min(order.fulfilmentPercent, 100)
-          );
+      {/* ORDER CARDS GRID - MAX 2 PER ROW */}
+      {!loading && visibleOrders.length > 0 && (
+        <div className="card-grid grid grid-cols-1 md:grid-cols-2 gap-5 max-w-6xl mx-auto">
+          {visibleOrders.map((order) => {
+            const expanded = expandedOrderId === order.id;
+            const colour = fulfilmentColour(order.fulfilmentPercent);
+            const barWidth = Math.max(
+              4,
+              Math.min(order.fulfilmentPercent, 100)
+            );
 
-          const suggestion = getStatusSuggestion(
-            order.status,
-            order.fulfilmentPercent
-          );
+            const suggestion = getStatusSuggestion(
+              order.status,
+              order.fulfilmentPercent
+            );
 
-          return (
-            <div
-              key={order.id}
-              className="card"
-              style={{
-                padding: 10,
-                border:
-                  expanded ? "1px solid #f5f5f5" : "1px solid #1f2933",
-                boxShadow: expanded
-                  ? "0 0 0 1px rgba(255,255,255,0.08)"
-                  : "none",
-              }}
-            >
-              {/* HEADER ROW (clickable) */}
-              <button
-                type="button"
-                onClick={() => toggleExpand(order.id)}
+            return (
+              <div
+                key={order.id}
+                className="card"
                 style={{
-                  width: "100%",
-                  background: "transparent",
-                  border: "none",
-                  padding: 0,
-                  margin: 0,
-                  textAlign: "left",
+                  padding: 14,
+                  border:
+                    expanded === true
+                      ? "1px solid rgba(250,250,250,0.6)"
+                      : "1px solid #1f2933",
+                  boxShadow: expanded
+                    ? "0 0 0 1px rgba(255,255,255,0.08)"
+                    : "0 12px 30px rgba(0,0,0,0.45)",
                   display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  cursor: "pointer",
+                  flexDirection: "column",
                   gap: 10,
+                  minHeight: 160,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 22,
-                      height: 22,
-                      borderRadius: "999px",
-                      border: "1px solid #4b5563",
-                      fontSize: 13,
-                    }}
-                  >
-                    {expanded ? "▾" : "▸"}
-                  </span>
-
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {order.partyName}
-                      {order.partyCity ? ` · ${order.partyCity}` : ""}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        opacity: 0.8,
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 8,
-                      }}
-                    >
-                      <span>Order #{order.orderCode}</span>
-                      <span>·</span>
-                      <span>{order.orderDateLabel}</span>
-                    </div>
-
-                    {/* Expected dispatch + overdue */}
-                    <div
-                      style={{
-                        fontSize: 11,
-                        opacity: 0.9,
-                        marginTop: 4,
-                        display: "flex",
-                        gap: 6,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <span>
-                        Expected: {order.expectedDispatchLabel}
-                      </span>
-                      {order.isOverdue && (
-                        <span
-                          style={{
-                            background: "#ef4444",
-                            color: "#fff",
-                            padding: "2px 8px",
-                            borderRadius: 999,
-                            fontSize: 10,
-                            fontWeight: 600,
-                          }}
-                        >
-                          Overdue
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    textAlign: "right",
-                    fontSize: 11,
-                    opacity: 0.9,
-                    minWidth: 140,
-                  }}
-                >
-                  <div>
-                    {order.totalQty} pcs · ₹{" "}
-                    {order.totalValue.toLocaleString("en-IN")}
-                  </div>
-
-                  <div style={{ marginTop: 4 }}>
-                    <span style={{ marginRight: 4, opacity: 0.8 }}>
-                      Status:
-                    </span>
-
-                    {/* COLOURED PILL (DISPLAY ONLY) */}
-                    <span
-                      style={{
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        background:
-                          STATUS_COLORS[order.status] || "#444",
-                        color: "#f9fafb",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        textTransform: "capitalize",
-                      }}
-                    >
-                      {(order.status || "pending").replace("_", " ")}
-                    </span>
-                  </div>
-
-                  {/* SUGGESTION TEXT (non-interactive) */}
-                  {suggestion && (
-                    <div
-                      style={{
-                        fontSize: 10,
-                        marginTop: 4,
-                        opacity: 0.7,
-                        color: "#fbbf24",
-                      }}
-                    >
-                      {suggestion}
-                    </div>
-                  )}
-                </div>
-              </button>
-
-              {/* FULFILMENT BAR (always visible) */}
-              <div style={{ marginTop: 8 }}>
-                <div
+                {/* HEADER ROW (clickable) */}
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(order.id)}
                   style={{
                     width: "100%",
-                    background: "#050505",
-                    borderRadius: 999,
-                    overflow: "hidden",
-                    height: 10,
-                    border: "1px solid #262626",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${barWidth}%`,
-                      background: colour,
-                      height: "100%",
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    marginTop: 4,
-                    opacity: 0.85,
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    margin: 0,
+                    textAlign: "left",
                     display: "flex",
                     justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: 4,
+                    alignItems: "flex-start",
+                    cursor: "pointer",
+                    gap: 12,
                   }}
                 >
-                  <span>
-                    {order.fulfilmentPercent}% fulfilled ·{" "}
-                    {order.dispatchedTotal}/{order.orderedTotal} pcs
-                    dispatched
-                  </span>
-                  <span>Pending: {order.pendingTotal} pcs</span>
-                </div>
-              </div>
-
-              {/* EXPANDED DETAILS */}
-              {expanded && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    borderTop: "1px solid #1f2933",
-                    paddingTop: 8,
-                  }}
-                >
+                  {/* Left block: party + meta */}
                   <div
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 6,
-                      gap: 8,
+                      alignItems: "flex-start",
+                      gap: 10,
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 22,
+                        height: 22,
+                        borderRadius: "999px",
+                        border: "1px solid #4b5563",
+                        fontSize: 13,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {expanded ? "▾" : "▸"}
+                    </span>
+
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {order.partyName}
+                        {order.partyCity ? ` · ${order.partyCity}` : ""}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          opacity: 0.8,
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 6,
+                          marginTop: 2,
+                        }}
+                      >
+                        <span>Order #{order.orderCode}</span>
+                        <span>·</span>
+                        <span>{order.orderDateLabel}</span>
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          opacity: 0.9,
+                          marginTop: 6,
+                          display: "flex",
+                          gap: 6,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span>
+                          Expected dispatch: {order.expectedDispatchLabel}
+                        </span>
+                        {order.isOverdue && (
+                          <span
+                            style={{
+                              background: "#ef4444",
+                              color: "#fff",
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              fontSize: 10,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: 0.4,
+                            }}
+                          >
+                            Overdue
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right block: qty/value + status */}
+                  <div
+                    style={{
+                      textAlign: "right",
+                      fontSize: 11,
+                      opacity: 0.95,
+                      minWidth: 150,
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>
+                      {order.totalQty} pcs
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      ₹ {order.totalValue.toLocaleString("en-IN")}
+                    </div>
+
+                    <div style={{ marginTop: 6 }}>
+                      <span style={{ marginRight: 4, opacity: 0.75 }}>
+                        Status:
+                      </span>
+
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          background: STATUS_COLORS[order.status] || "#444",
+                          color: "#f9fafb",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          textTransform: "capitalize",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {(order.status || "pending").replace("_", " ")}
+                      </span>
+                    </div>
+
+                    {suggestion && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          marginTop: 6,
+                          opacity: 0.8,
+                          color: "#fbbf24",
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    )}
+                  </div>
+                </button>
+
+                {/* FULFILMENT BAR */}
+                <div style={{ marginTop: 4 }}>
+                  <div
+                    style={{
+                      width: "100%",
+                      background: "#050505",
+                      borderRadius: 999,
+                      overflow: "hidden",
+                      height: 10,
+                      border: "1px solid #262626",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 12,
-                        opacity: 0.85,
+                        width: `${barWidth}%`,
+                        background: colour,
+                        height: "100%",
+                        transition: "width 160ms ease-out",
                       }}
-                    >
-                      Line items in this order
-                    </div>
-                    <Link
-                      href={`/orders/${order.id}`}
-                      style={{
-                        fontSize: 11,
-                        textDecoration: "underline",
-                        textUnderlineOffset: 3,
-                      }}
-                    >
-                      Open detail page →
-                    </Link>
+                    />
                   </div>
-
-                  <div className="table-wrapper">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: "45%" }}>Item</th>
-                          <th>Ordered</th>
-                          <th>Dispatched</th>
-                          <th>Pending</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {order.lines.length === 0 && (
-                          <tr>
-                            <td
-                              colSpan={4}
-                              style={{
-                                textAlign: "center",
-                                padding: 8,
-                                fontSize: 12,
-                                opacity: 0.8,
-                              }}
-                            >
-                              No line items found for this order.
-                            </td>
-                          </tr>
-                        )}
-
-                        {order.lines.map((line, idx) => (
-                          <tr key={idx}>
-                            <td>{line.itemName}</td>
-                            <td>{line.ordered} pcs</td>
-                            <td>{line.dispatched} pcs</td>
-                            <td>{line.pending} pcs</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      marginTop: 4,
+                      opacity: 0.9,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: 4,
+                    }}
+                  >
+                    <span>
+                      {order.fulfilmentPercent}% fulfilled ·{" "}
+                      {order.dispatchedTotal}/{order.orderedTotal} pcs dispatched
+                    </span>
+                    <span>Pending: {order.pendingTotal} pcs</span>
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+
+                {/* EXPANDED DETAILS */}
+                {expanded && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      borderTop: "1px solid #1f2933",
+                      paddingTop: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 6,
+                        gap: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          opacity: 0.85,
+                        }}
+                      >
+                        Line items in this order
+                      </div>
+                      <Link
+                        href={`/orders/${order.id}`}
+                        style={{
+                          fontSize: 11,
+                          textDecoration: "underline",
+                          textUnderlineOffset: 3,
+                        }}
+                      >
+                        Open detail page →
+                      </Link>
+                    </div>
+
+                    <div className="table-wrapper">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: "45%" }}>Item</th>
+                            <th>Ordered</th>
+                            <th>Dispatched</th>
+                            <th>Pending</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {order.lines.length === 0 && (
+                            <tr>
+                              <td
+                                colSpan={4}
+                                style={{
+                                  textAlign: "center",
+                                  padding: 8,
+                                  fontSize: 12,
+                                  opacity: 0.8,
+                                }}
+                              >
+                                No line items found for this order.
+                              </td>
+                            </tr>
+                          )}
+
+                          {order.lines.map((line, idx) => (
+                            <tr key={idx}>
+                              <td>{line.itemName}</td>
+                              <td>{line.ordered} pcs</td>
+                              <td>{line.dispatched} pcs</td>
+                              <td>{line.pending} pcs</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
