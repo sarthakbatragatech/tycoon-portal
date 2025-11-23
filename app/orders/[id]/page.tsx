@@ -912,6 +912,48 @@ export default function OrderDetailPage() {
     }
   }
 
+  // ---------- SPLIT LINES FOR UI (PENDING VS FULLY DISPATCHED) ----------
+
+  const enrichedPendingLines: any[] = [];
+  const enrichedCompletedLines: any[] = [];
+
+  (lines || []).forEach((l: any) => {
+    const itemRel = l.items;
+    const item =
+      itemRel && Array.isArray(itemRel) && itemRel.length > 0
+        ? itemRel[0]
+        : itemRel || null;
+
+    const ordered = l.qty ?? 0;
+    const rawDispatched =
+      l.dispatched_qty === "" || l.dispatched_qty == null
+        ? 0
+        : Number(l.dispatched_qty);
+
+    let dispatched = Number.isNaN(rawDispatched) ? 0 : rawDispatched;
+    if (dispatched < 0) dispatched = 0;
+    if (dispatched > ordered) dispatched = ordered;
+
+    const pending = Math.max(ordered - dispatched, 0);
+    const rate = l.dealer_rate_at_order ?? 0;
+    const itemName = item?.name ?? "Unknown item";
+
+    const enriched = {
+      line: l,
+      itemName,
+      ordered,
+      dispatched,
+      pending,
+      rate,
+    };
+
+    if (pending > 0) {
+      enrichedPendingLines.push(enriched);
+    } else {
+      enrichedCompletedLines.push(enriched);
+    }
+  });
+
   // ---------- RENDER ----------
 
   if (loading) {
@@ -962,8 +1004,17 @@ export default function OrderDetailPage() {
             >
               Internal ID: <span style={{ fontSize: 11 }}>{order.id}</span>
               <br />
-              <span style={{ display: "inline-block", marginTop: 6 }}>
-                Status:&nbsp;
+              {/* Status + Save inline */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 6,
+                }}
+              >
+                <span>Status:</span>
                 <select
                   value={order.status}
                   onChange={(e) => handleStatusChange(e.target.value)}
@@ -982,9 +1033,25 @@ export default function OrderDetailPage() {
                     </option>
                   ))}
                 </select>
-              </span>
-              <br />
-              <span style={{ opacity: 0.7 }}>
+                <button
+                  type="button"
+                  onClick={saveStatus}
+                  disabled={savingStatus}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #f5f5f5",
+                    background: savingStatus ? "#111827" : "#f5f5f5",
+                    color: savingStatus ? "#9ca3af" : "#000",
+                    fontSize: 11,
+                    cursor: savingStatus ? "default" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {savingStatus ? "Saving…" : "Save status"}
+                </button>
+              </div>
+              <span style={{ opacity: 0.7, display: "inline-block", marginTop: 4 }}>
                 Current: {statusLabel || "Unknown"}
               </span>
             </div>
@@ -1214,40 +1281,95 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
+          {/* Dispatch date – highlighted */}
           <div
             style={{
               marginTop: 8,
               marginBottom: 8,
               display: "flex",
               flexWrap: "wrap",
-              gap: 8,
+              gap: 10,
               alignItems: "center",
               justifyContent: "space-between",
               fontSize: 12,
             }}
           >
-            <span style={{ opacity: 0.8 }}>
-              Enter "Dispatched Now" quantities for the selected date.
+            <span style={{ opacity: 0.85 }}>
+              Enter <strong>"Dispatched Now"</strong> quantities for the date
+              shown on the right.
             </span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ opacity: 0.8 }}>Dispatch date</span>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "6px 12px",
+                borderRadius: 999,
+                border: "1px solid #0ea5e9",
+                background:
+                  "radial-gradient(circle at top left, rgba(56,189,248,0.25), transparent 55%)",
+                boxShadow:
+                  "0 0 0 1px rgba(15,23,42,0.8), 0 0 18px rgba(56,189,248,0.35)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.08,
+                    opacity: 0.9,
+                  }}
+                >
+                  Dispatch date
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    opacity: 0.75,
+                  }}
+                >
+                  Make sure this is correct before saving dispatch.
+                </span>
+              </div>
+
               <input
                 type="date"
                 value={dispatchDate}
                 onChange={(e) => setDispatchDate(e.target.value)}
                 style={{
-                  padding: "4px 10px",
+                  padding: "6px 12px",
                   borderRadius: 999,
-                  border: "1px solid #333",
-                  background: "#050505",
+                  border: "1px solid #38bdf8",
+                  background: "#020617",
                   color: "#f5f5f5",
                   fontSize: 12,
+                  fontWeight: 500,
+                  minWidth: 150,
                 }}
               />
             </div>
           </div>
 
-          <div className="table-wrapper">
+          {/* Pending / partially-dispatched table */}
+          <div className="table-wrapper" style={{ marginTop: 4 }}>
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.9,
+                marginBottom: 4,
+                fontWeight: 500,
+              }}
+            >
+              Pending / partially dispatched items
+            </div>
             <table className="table">
               <thead>
                 <tr>
@@ -1262,69 +1384,149 @@ export default function OrderDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {lines.map((l: any) => {
-                  const itemRel = l.items;
-                  const item =
-                    itemRel && Array.isArray(itemRel) && itemRel.length > 0
-                      ? itemRel[0]
-                      : itemRel || null;
+                {enrichedPendingLines.map((row) => (
+                  <tr key={row.line.id}>
+                    <td>{row.itemName}</td>
+                    <td
+                      style={{
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ₹ {row.rate.toLocaleString("en-IN")}
+                    </td>
+                    <td>{row.ordered} pcs</td>
+                    <td>{row.dispatched} pcs</td>
+                    <td>{row.pending} pcs</td>
+                    <td>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={dispatchedNow[row.line.id] ?? ""}
+                        onChange={(e) =>
+                          handleDispatchedNowChange(
+                            row.line.id,
+                            e.target.value
+                          )
+                        }
+                        placeholder="0"
+                        style={{
+                          width: 80,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: "#050505",
+                          color: "#f5f5f5",
+                          fontSize: 12,
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.line.line_remarks || ""}
+                        onChange={(e) =>
+                          handleNoteChange(row.line.id, e.target.value)
+                        }
+                        placeholder="Colour / customisation..."
+                        style={{
+                          width: "100%",
+                          padding: "4px 8px",
+                          borderRadius: 8,
+                          border: "1px solid #333",
+                          background: "#050505",
+                          color: "#f5f5f5",
+                          fontSize: 12,
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => deleteLine(row.line)}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: "transparent",
+                          color: "#aaa",
+                          fontSize: 12,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
 
-                  const ordered = l.qty ?? 0;
+                {lines.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      style={{ textAlign: "center", padding: 12 }}
+                    >
+                      No line items found for this order.
+                    </td>
+                  </tr>
+                )}
 
-                  const rawDispatched =
-                    l.dispatched_qty === "" || l.dispatched_qty == null
-                      ? 0
-                      : Number(l.dispatched_qty);
+                {lines.length > 0 && enrichedPendingLines.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      style={{ textAlign: "center", padding: 10, fontSize: 12 }}
+                    >
+                      No pending items · all lines are fully dispatched.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                  let dispatched = Number.isNaN(rawDispatched)
-                    ? 0
-                    : rawDispatched;
-
-                  if (dispatched < 0) dispatched = 0;
-                  if (dispatched > ordered) dispatched = ordered;
-
-                  const pending = Math.max(ordered - dispatched, 0);
-
-                  return (
-                    <tr key={l.id}>
-                      <td>{item?.name ?? "Unknown item"}</td>
+          {/* Fully dispatched items table */}
+          {enrichedCompletedLines.length > 0 && (
+            <div className="table-wrapper" style={{ marginTop: 16 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  opacity: 0.9,
+                  marginBottom: 4,
+                  fontWeight: 500,
+                }}
+              >
+                Fully dispatched items
+              </div>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "30%" }}>Item</th>
+                    <th>Rate</th>
+                    <th>Ordered</th>
+                    <th>Dispatched</th>
+                    <th>Notes</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrichedCompletedLines.map((row) => (
+                    <tr key={row.line.id}>
+                      <td>{row.itemName}</td>
                       <td
                         style={{
                           whiteSpace: "nowrap",
                         }}
                       >
-                        ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
+                        ₹ {row.rate.toLocaleString("en-IN")}
                       </td>
-                      <td>{ordered} pcs</td>
-                      <td>{dispatched} pcs</td>
-                      <td>{pending} pcs</td>
+                      <td>{row.ordered} pcs</td>
+                      <td>{row.dispatched} pcs</td>
                       <td>
                         <input
                           type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={dispatchedNow[l.id] ?? ""}
+                          value={row.line.line_remarks || ""}
                           onChange={(e) =>
-                            handleDispatchedNowChange(l.id, e.target.value)
-                          }
-                          placeholder="0"
-                          style={{
-                            width: 80,
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            border: "1px solid #333",
-                            background: "#050505",
-                            color: "#f5f5f5",
-                            fontSize: 12,
-                          }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          value={l.line_remarks || ""}
-                          onChange={(e) =>
-                            handleNoteChange(l.id, e.target.value)
+                            handleNoteChange(row.line.id, e.target.value)
                           }
                           placeholder="Colour / customisation..."
                           style={{
@@ -1341,7 +1543,7 @@ export default function OrderDetailPage() {
                       <td>
                         <button
                           type="button"
-                          onClick={() => deleteLine(l)}
+                          onClick={() => deleteLine(row.line)}
                           style={{
                             padding: "4px 10px",
                             borderRadius: 999,
@@ -1355,22 +1557,11 @@ export default function OrderDetailPage() {
                         </button>
                       </td>
                     </tr>
-                  );
-                })}
-
-                {lines.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      style={{ textAlign: "center", padding: 12 }}
-                    >
-                      No line items found for this order.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* ADD NEW LINE UI */}
           <div
@@ -1518,10 +1709,10 @@ export default function OrderDetailPage() {
           width: "800px",
           backgroundColor: "#ffffff",
           color: "#111827",
-          padding: "24px",
+          padding: "26px 28px",
           fontFamily:
             "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-          fontSize: "11px",
+          fontSize: "12px",
         }}
       >
         {/* Header with logo + title */}
@@ -1529,26 +1720,26 @@ export default function OrderDetailPage() {
           style={{
             display: "flex",
             alignItems: "center",
-            marginBottom: 8,
-            gap: 12,
+            marginBottom: 10,
+            gap: 14,
           }}
         >
           <img
             src="/Tycoon_Logo.JPG"
             alt="Tycoon Logo"
-            style={{ height: 32 }}
+            style={{ height: 34 }}
           />
           <div>
             <div
               style={{
-                fontSize: 16,
-                fontWeight: 600,
-                letterSpacing: 0.5,
+                fontSize: 18,
+                fontWeight: 700,
+                letterSpacing: 0.6,
               }}
             >
               TYCOON ORDER PORTAL
             </div>
-            <div style={{ fontSize: 11, color: "#4b5563" }}>
+            <div style={{ fontSize: 11.5, color: "#4b5563", marginTop: 2 }}>
               Order Sheet
             </div>
           </div>
@@ -1557,8 +1748,8 @@ export default function OrderDetailPage() {
         <hr
           style={{
             border: 0,
-            borderTop: "1px solid #e5e7eb",
-            margin: "8px 0 16px",
+            borderTop: "1.2px solid #d1d5db",
+            margin: "8px 0 14px",
           }}
         />
 
@@ -1574,15 +1765,17 @@ export default function OrderDetailPage() {
           <div style={{ flex: 1 }}>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 4,
               }}
             >
               Party details
             </div>
-            <div style={{ fontSize: 11, color: "#374151" }}>
-              <div>{party?.name ?? "Unknown party"}</div>
+            <div style={{ fontSize: 11.5, color: "#374151" }}>
+              <div style={{ fontWeight: 600 }}>
+                {party?.name ?? "Unknown party"}
+              </div>
               <div>{party?.city ?? ""}</div>
             </div>
           </div>
@@ -1590,26 +1783,30 @@ export default function OrderDetailPage() {
           <div style={{ flex: 1 }}>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 4,
               }}
             >
               Order details
             </div>
-            <div style={{ fontSize: 11, color: "#374151" }}>
-              <div>Order code: {displayCode}</div>
+            <div style={{ fontSize: 11.5, color: "#374151" }}>
               <div>
-                Order date:{" "}
+                <strong>Order code:</strong> {displayCode}
+              </div>
+              <div>
+                <strong>Order date:</strong>{" "}
                 {order.order_date
                   ? new Date(order.order_date).toLocaleDateString(
                       "en-IN"
                     )
                   : "Not set"}
               </div>
-              <div>Status: {statusLabel}</div>
               <div>
-                Expected dispatch:{" "}
+                <strong>Status:</strong> {statusLabel}
+              </div>
+              <div>
+                <strong>Expected dispatch:</strong>{" "}
                 {order.expected_dispatch_date
                   ? new Date(
                       order.expected_dispatch_date
@@ -1617,8 +1814,8 @@ export default function OrderDetailPage() {
                   : "Not set"}
               </div>
               <div>
-                Dispatched: {totalDispatched} / {totalOrdered} pcs (
-                {fulfillmentPercent}%)
+                <strong>Dispatched:</strong> {totalDispatched} / {totalOrdered}{" "}
+                pcs ({fulfillmentPercent}%)
               </div>
             </div>
           </div>
@@ -1628,7 +1825,7 @@ export default function OrderDetailPage() {
         {order.remarks && (
           <div
             style={{
-              fontSize: 11,
+              fontSize: 11.5,
               color: "#374151",
               marginBottom: 12,
             }}
@@ -1644,10 +1841,11 @@ export default function OrderDetailPage() {
             <div
               style={{
                 whiteSpace: "pre-wrap",
-                border: "1px solid #e5e7eb",
+                border: "1px solid #d1d5db",
                 borderRadius: 4,
                 padding: 8,
                 backgroundColor: "#f9fafb",
+                lineHeight: 1.4,
               }}
             >
               {order.remarks}
@@ -1661,7 +1859,7 @@ export default function OrderDetailPage() {
             width: "100%",
             borderCollapse: "collapse",
             marginTop: 4,
-            border: "1px solid #d1d5db",
+            border: "1px solid #9ca3af",
           }}
         >
           <thead>
@@ -1671,12 +1869,12 @@ export default function OrderDetailPage() {
                   key={h}
                   style={{
                     textAlign: "left",
-                    border: "1px solid #d1d5db",
-                    padding: "6px 6px",
-                    fontWeight: 600,
-                    fontSize: 11,
+                    border: "1px solid #9ca3af",
+                    padding: "6px 7px",
+                    fontWeight: 700,
+                    fontSize: 11.5,
                     color: "#111827",
-                    backgroundColor: "#f3f4f6",
+                    backgroundColor: "#e5e7eb",
                   }}
                 >
                   {h}
@@ -1685,7 +1883,7 @@ export default function OrderDetailPage() {
             </tr>
           </thead>
           <tbody>
-            {lines.map((l: any) => {
+            {lines.map((l: any, index: number) => {
               const itemRel = l.items;
               const item =
                 itemRel && Array.isArray(itemRel) && itemRel.length > 0
@@ -1713,24 +1911,29 @@ export default function OrderDetailPage() {
                   ? l.line_remarks.trim()
                   : null;
 
+              const rowBg =
+                index % 2 === 0 ? "#ffffff" : "#f9fafb";
+
               return (
-                <tr key={l.id}>
+                <tr key={l.id} style={{ backgroundColor: rowBg }}>
                   <td
                     style={{
-                      padding: "4px 6px",
-                      border: "1px solid #e5e7eb",
-                      fontSize: 11,
+                      padding: "5px 7px",
+                      border: "1px solid #d1d5db",
+                      fontSize: 11.5,
                       color: "#111827",
                       verticalAlign: "top",
                     }}
                   >
-                    <div>{item?.name ?? "Unknown item"}</div>
+                    <div style={{ fontWeight: 500 }}>
+                      {item?.name ?? "Unknown item"}
+                    </div>
                     {note && (
                       <div
                         style={{
                           marginTop: 2,
-                          fontSize: 10,
-                          color: "#6b7280",
+                          fontSize: 10.5,
+                          color: "#4b5563",
                           fontStyle: "italic",
                         }}
                       >
@@ -1741,10 +1944,10 @@ export default function OrderDetailPage() {
 
                   <td
                     style={{
-                      padding: "4px 6px",
-                      border: "1px solid #e5e7eb",
-                      fontSize: 11,
-                      color: "#4b5563",
+                      padding: "5px 7px",
+                      border: "1px solid #d1d5db",
+                      fontSize: 11.5,
+                      color: "#111827",
                       textAlign: "right",
                     }}
                   >
@@ -1753,10 +1956,10 @@ export default function OrderDetailPage() {
 
                   <td
                     style={{
-                      padding: "4px 6px",
-                      border: "1px solid #e5e7eb",
-                      fontSize: 11,
-                      color: "#4b5563",
+                      padding: "5px 7px",
+                      border: "1px solid #d1d5db",
+                      fontSize: 11.5,
+                      color: "#111827",
                       textAlign: "right",
                     }}
                   >
@@ -1765,10 +1968,10 @@ export default function OrderDetailPage() {
 
                   <td
                     style={{
-                      padding: "4px 6px",
-                      border: "1px solid #e5e7eb",
-                      fontSize: 11,
-                      color: "#4b5563",
+                      padding: "5px 7px",
+                      border: "1px solid #d1d5db",
+                      fontSize: 11.5,
+                      color: "#111827",
                       textAlign: "right",
                     }}
                   >
@@ -1781,7 +1984,7 @@ export default function OrderDetailPage() {
             {lines.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={4}
                   style={{
                     textAlign: "center",
                     padding: 10,
@@ -1795,6 +1998,28 @@ export default function OrderDetailPage() {
             )}
           </tbody>
         </table>
+
+        {/* Small totals footer for readability */}
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 11.5,
+            color: "#111827",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 16,
+          }}
+        >
+          <span>
+            <strong>Total ordered:</strong> {totalOrdered} pcs
+          </span>
+          <span>
+            <strong>Total dispatched:</strong> {totalDispatched} pcs
+          </span>
+          <span>
+            <strong>Pending:</strong> {totalOrdered - totalDispatched} pcs
+          </span>
+        </div>
       </div>
 
       {/* ACTIONS */}
@@ -1825,14 +2050,7 @@ export default function OrderDetailPage() {
             : "Save dispatch quantities & notes"}
         </button>
 
-        <button
-          className="pill-button"
-          type="button"
-          onClick={saveStatus}
-          disabled={savingStatus}
-        >
-          {savingStatus ? "Saving status…" : "Save status"}
-        </button>
+        {/* Save status button moved into the top card, so removed here */}
 
         <button
           className="pill-button"
