@@ -1251,7 +1251,7 @@ export default function OrderDetailPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{ width: "28%" }}>Item</th>
+                  <th style={{ width: "22%" }}>Item</th>
                   <th>Rate</th>
                   <th>Ordered</th>
                   <th>Dispatched</th>
@@ -1287,7 +1287,9 @@ export default function OrderDetailPage() {
 
                   return (
                     <tr key={l.id}>
-                      <td>{item?.name ?? "Unknown item"}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {item?.name ?? "Unknown item"}
+                      </td>
                       <td>
                         ₹{" "}
                         {(l.dealer_rate_at_order ?? 0).toLocaleString(
