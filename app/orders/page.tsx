@@ -819,15 +819,34 @@ export default function OrdersPage() {
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          width: 22,
-                          height: 22,
+                          width: 34,
+                          height: 34,
                           borderRadius: "999px",
-                          border: "1px solid #4b5563",
-                          fontSize: 13,
+                          background: expanded ? "rgba(56,189,248,0.08)" : "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(148,163,184,0.35)",
+                          boxShadow: expanded
+                            ? "0 0 8px rgba(56,189,248,0.45)"
+                            : "0 0 2px rgba(148,163,184,0.25)",
                           flexShrink: 0,
+                          transition: "all 160ms ease-out",
                         }}
                       >
-                        {expanded ? "▾" : "▸"}
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          style={{
+                            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+                            transition: "transform 160ms ease-out",
+                          }}
+                          fill="none"
+                          stroke="#38bdf8"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
                       </span>
 
                       <div style={{ minWidth: 0 }}>
