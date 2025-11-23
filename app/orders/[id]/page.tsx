@@ -1287,14 +1287,13 @@ export default function OrderDetailPage() {
 
                   return (
                     <tr key={l.id}>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {item?.name ?? "Unknown item"}
-                      </td>
-                      <td>
-                        ₹{" "}
-                        {(l.dealer_rate_at_order ?? 0).toLocaleString(
-                          "en-IN"
-                        )}
+                      <td>{item?.name ?? "Unknown item"}</td>
+                      <td
+                        style={{
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        ₹ {(l.dealer_rate_at_order ?? 0).toLocaleString("en-IN")}
                       </td>
                       <td>{ordered} pcs</td>
                       <td>{dispatched} pcs</td>
