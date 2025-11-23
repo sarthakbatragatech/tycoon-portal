@@ -1068,7 +1068,7 @@ export default function OrderDetailPage() {
                     cursor: savingStatus ? "default" : "pointer",
                   }}
                 >
-                  {savingStatus ? "Saving…" : "Save status"}
+                  {savingStatus ? "Saving…" : "Save"}
                 </button>
               </div>
             </div>
@@ -1153,19 +1153,6 @@ export default function OrderDetailPage() {
                 >
                   {savingExpectedDate ? "Saving…" : "Save"}
                 </button>
-
-                {order.expected_dispatch_date && (
-                  <span style={{ opacity: 0.75 }}>
-                    Current:{" "}
-                    {new Date(
-                      order.expected_dispatch_date
-                    ).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "2-digit",
-                    })}
-                  </span>
-                )}
 
                 {isOverdue && (
                   <span
