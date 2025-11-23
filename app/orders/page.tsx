@@ -81,6 +81,8 @@ type EnhancedOrder = {
   }[];
 };
 
+const PAGE_SIZE = 20;
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +91,7 @@ export default function OrdersPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState("all");
   const [fulfilmentFilter, setFulfilmentFilter] = useState("all");
+  const [hideDispatched, setHideDispatched] = useState(false);
 
   // Search (party name + item name only)
   const [searchQuery, setSearchQuery] = useState("");
@@ -96,6 +99,9 @@ export default function OrdersPage() {
   // DATE FILTERS (A)
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Pagination: how many filtered orders are currently visible
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     loadOrders();
@@ -330,7 +336,7 @@ export default function OrdersPage() {
     });
   }, [orders]);
 
-  // Apply date filter + status filter + fulfilment filter + search (C)
+  // Apply date filter + status filter + fulfilment filter + hideDispatched + search (C)
   const visibleOrders = useMemo(() => {
     let list = [...enhancedOrders];
 
@@ -362,6 +368,14 @@ export default function OrdersPage() {
       list = list.filter((o) => {
         const st = (o.status || "pending").toLowerCase();
         return st === statusFilter;
+      });
+    }
+
+    // Hide dispatched toggle
+    if (hideDispatched) {
+      list = list.filter((o) => {
+        const st = (o.status || "pending").toLowerCase();
+        return st !== "dispatched";
       });
     }
 
@@ -397,11 +411,17 @@ export default function OrdersPage() {
   }, [
     enhancedOrders,
     statusFilter,
+    hideDispatched,
     fulfilmentFilter,
     searchQuery,
     dateFrom,
     dateTo,
   ]);
+
+  // Reset pagination when filters/search/date/hideDispatched change
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [statusFilter, hideDispatched, fulfilmentFilter, searchQuery, dateFrom, dateTo]);
 
   function fulfilmentColour(percent: number): string {
     if (percent >= 100) return "#22c55e";
@@ -410,6 +430,8 @@ export default function OrdersPage() {
     if (percent > 0) return "#fb923c";
     return "#f87171";
   }
+
+  const pagedOrders = visibleOrders.slice(0, visibleCount);
 
   return (
     <>
@@ -570,7 +592,7 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* FILTER BAR (status + fulfilment) */}
+      {/* FILTER BAR (status + fulfilment + hide dispatched) */}
       <div
         style={{
           marginBottom: 10,
@@ -630,12 +652,43 @@ export default function OrdersPage() {
           </select>
         </div>
 
-        {(statusFilter !== "all" || fulfilmentFilter !== "all") && (
+        {/* Hide dispatched toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              cursor: "pointer",
+              color: "#e5e7eb",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={hideDispatched}
+              onChange={(e) => setHideDispatched(e.target.checked)}
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 3,
+                border: "1px solid #4b5563",
+                background: "#050505",
+                accentColor: "#f97316",
+              }}
+            />
+            <span>Hide dispatched orders</span>
+          </label>
+        </div>
+
+        {(statusFilter !== "all" ||
+          fulfilmentFilter !== "all" ||
+          hideDispatched) && (
           <button
             type="button"
             onClick={() => {
               setStatusFilter("all");
               setFulfilmentFilter("all");
+              setHideDispatched(false);
             }}
             style={{
               padding: "4px 10px",
@@ -667,22 +720,24 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {!loading && enhancedOrders.length > 0 && visibleOrders.length === 0 && (
-        <div className="card">
-          <div className="card-label">
-            No orders match the current filters/search
+      {!loading &&
+        enhancedOrders.length > 0 &&
+        visibleOrders.length === 0 && (
+          <div className="card">
+            <div className="card-label">
+              No orders match the current filters/search
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              Try changing the date range, status, fulfilment, or search text.
+            </div>
           </div>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>
-            Try changing the date range, status, fulfilment, or search text.
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* ORDER CARDS GRID - MAX 2 PER ROW */}
+      {/* ORDER CARDS GRID - MAX 2 PER ROW + LOAD MORE */}
       {!loading && visibleOrders.length > 0 && (
         <>
           <div className="card-grid orders-grid">
-            {visibleOrders.map((order) => {
+            {pagedOrders.map((order) => {
               const expanded = expandedOrderId === order.id;
               const colour = fulfilmentColour(order.fulfilmentPercent);
               const barWidth = Math.max(
@@ -759,40 +814,20 @@ export default function OrdersPage() {
                         minWidth: 0,
                       }}
                     >
-
                       <span
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          width: 34,
-                          height: 34,
+                          width: 22,
+                          height: 22,
                           borderRadius: "999px",
-                          background: expanded ? "rgba(56,189,248,0.08)" : "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(148,163,184,0.35)",
-                          boxShadow: expanded
-                            ? "0 0 8px rgba(56,189,248,0.45)"
-                            : "0 0 2px rgba(148,163,184,0.25)",
+                          border: "1px solid #4b5563",
+                          fontSize: 13,
                           flexShrink: 0,
-                          transition: "all 160ms ease-out",
                         }}
                       >
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          style={{
-                            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-                            transition: "transform 160ms ease-out",
-                          }}
-                          fill="none"
-                          stroke="#38bdf8"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
+                        {expanded ? "▾" : "▸"}
                       </span>
 
                       <div style={{ minWidth: 0 }}>
@@ -1055,6 +1090,51 @@ export default function OrdersPage() {
               );
             })}
           </div>
+
+          {/* LOAD MORE + META */}
+          {visibleOrders.length > PAGE_SIZE && (
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                color: "#d1d5db",
+              }}
+            >
+              <div>
+                Showing{" "}
+                <strong>
+                  {Math.min(visibleCount, visibleOrders.length)}
+                </strong>{" "}
+                of <strong>{visibleOrders.length}</strong> matching orders
+              </div>
+
+              {visibleCount < visibleOrders.length && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleCount((c) =>
+                      Math.min(c + PAGE_SIZE, visibleOrders.length)
+                    )
+                  }
+                  style={{
+                    padding: "6px 16px",
+                    borderRadius: 999,
+                    border: "1px solid #f5f5f5",
+                    background: "#f5f5f5",
+                    color: "#000",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  Load more orders
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Local styles to force max 2 columns */}
           <style jsx>{`
