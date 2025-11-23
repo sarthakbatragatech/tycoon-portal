@@ -1323,8 +1323,7 @@ export default function OrderDetailPage() {
               }}
             >
               Enter <strong>"Dispatched Now"</strong> quantities for the date
-              shown on the right. Pending items stay on top; once an item is
-              fully dispatched it moves to the table below.
+              shown on the right.
             </div>
 
             <div
