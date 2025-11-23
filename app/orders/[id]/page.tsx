@@ -1292,81 +1292,62 @@ export default function OrderDetailPage() {
           {/* Dispatch date + helper text */}
           <div
             style={{
-              marginTop: 10,
+              marginTop: 8,
               marginBottom: 8,
               display: "flex",
               flexWrap: "wrap",
-              gap: 12,
-              alignItems: "stretch",
+              gap: 8,
+              alignItems: "center",
               justifyContent: "space-between",
               fontSize: 12,
             }}
           >
-            <div
-              style={{
-                flex: "1 1 220px",
-                opacity: 0.85,
-                paddingRight: 8,
-              }}
-            >
-              Enter <strong>"Dispatched Now"</strong> quantities for the date
-              shown on the right.
-            </div>
+            <span style={{ opacity: 0.8 }}>
+              Enter "Dispatched Now" quantities for the date shown on the right.
+            </span>
 
+            {/* Compact halo pill for dispatch date */}
             <div
               style={{
-                flex: "0 0 auto",
-                padding: "8px 14px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 12px",
                 borderRadius: 999,
                 border: "1px solid #38bdf8",
+                boxShadow: "0 0 0 1px rgba(56,189,248,0.35)",
                 background:
-                  "radial-gradient(circle at top left, rgba(56,189,248,0.18), rgba(0,0,0,0.7))",
-                boxShadow: "0 0 0 1px rgba(15,23,42,0.9)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-                minWidth: 230,
+                  "radial-gradient(circle at top left, rgba(56,189,248,0.18), #020617)",
+                whiteSpace: "nowrap",
               }}
             >
-              <div
+              <span
                 style={{
                   fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: 0.08,
                   textTransform: "uppercase",
+                  letterSpacing: 0.8,
                   color: "#e0f2fe",
                 }}
               >
                 Dispatch date
-              </div>
-              <div
+              </span>
+
+              <input
+                type="date"
+                value={dispatchDate}
+                onChange={(e) => setDispatchDate(e.target.value)}
                 style={{
-                  fontSize: 10,
-                  opacity: 0.9,
-                  color: "#bae6fd",
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border: "1px solid #0f172a",
+                  background: "#020617",
+                  color: "#f9fafb",
+                  fontSize: 12,
                 }}
-              >
-                Make sure this is correct before saving dispatch.
-              </div>
-              <div style={{ marginTop: 4 }}>
-                <input
-                  type="date"
-                  value={dispatchDate}
-                  onChange={(e) => setDispatchDate(e.target.value)}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #0ea5e9",
-                    background: "#020617",
-                    color: "#e5f7ff",
-                    fontSize: 12,
-                    minWidth: 160,
-                  }}
-                />
-              </div>
+              />
             </div>
           </div>
-
+          
           {/* PENDING / PARTIALLY DISPATCHED TABLE */}
           <div
             style={{
