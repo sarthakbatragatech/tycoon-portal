@@ -28,6 +28,16 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+// match Orders page colours
+const STATUS_COLORS: Record<string, string> = {
+  pending: "#6b7280", // grey
+  in_production: "#0f766e", // teal instead of strong blue
+  packed: "#8b5cf6", // purple
+  partially_dispatched: "#f97316", // orange
+  dispatched: "#22c55e", // green
+  cancelled: "#ef4444", // red
+};
+
 function getTodayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -773,7 +783,7 @@ export default function OrderDetailPage() {
   // ---------- WHATSAPP SUMMARY (INCLUDES NOTES) ----------
 
   const party =
-    order && Array.isArray(order.parties) && order.parties.length > 0
+    order && Array.isArray(order?.parties) && order.parties.length > 0
       ? order.parties[0]
       : order?.parties;
 
@@ -912,18 +922,9 @@ export default function OrderDetailPage() {
     }
   }
 
-  // ---------- SPLIT LINES FOR UI (PENDING VS FULLY DISPATCHED) ----------
+  // ---------- helper for pending / full split ----------
 
-  const enrichedPendingLines: any[] = [];
-  const enrichedCompletedLines: any[] = [];
-
-  (lines || []).forEach((l: any) => {
-    const itemRel = l.items;
-    const item =
-      itemRel && Array.isArray(itemRel) && itemRel.length > 0
-        ? itemRel[0]
-        : itemRel || null;
-
+  function getLineStats(l: any) {
     const ordered = l.qty ?? 0;
     const rawDispatched =
       l.dispatched_qty === "" || l.dispatched_qty == null
@@ -935,23 +936,17 @@ export default function OrderDetailPage() {
     if (dispatched > ordered) dispatched = ordered;
 
     const pending = Math.max(ordered - dispatched, 0);
-    const rate = l.dealer_rate_at_order ?? 0;
-    const itemName = item?.name ?? "Unknown item";
+    return { ordered, dispatched, pending };
+  }
 
-    const enriched = {
-      line: l,
-      itemName,
-      ordered,
-      dispatched,
-      pending,
-      rate,
-    };
+  const pendingLines = lines.filter((l: any) => {
+    const { pending } = getLineStats(l);
+    return pending > 0;
+  });
 
-    if (pending > 0) {
-      enrichedPendingLines.push(enriched);
-    } else {
-      enrichedCompletedLines.push(enriched);
-    }
+  const fullyDispatchedLines = lines.filter((l: any) => {
+    const { ordered, dispatched, pending } = getLineStats(l);
+    return ordered > 0 && dispatched === ordered && pending === 0;
   });
 
   // ---------- RENDER ----------
@@ -981,6 +976,9 @@ export default function OrderDetailPage() {
     );
   }
 
+  const statusColor =
+    STATUS_COLORS[(order.status || "pending") as string] || "#4b5563";
+
   return (
     <>
       {/* NORMAL DARK UI */}
@@ -993,6 +991,7 @@ export default function OrderDetailPage() {
 
         {/* TOP SUMMARY */}
         <div className="card-grid" style={{ marginBottom: 18 }}>
+          {/* ORDER CODE + STATUS */}
           <div className="card">
             <div className="card-label">Order Code</div>
             <div className="card-value" style={{ fontSize: 16 }}>
@@ -1000,21 +999,42 @@ export default function OrderDetailPage() {
             </div>
             <div
               className="card-meta"
-              style={{ fontSize: 12, lineHeight: 1.5 }}
+              style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4 }}
             >
-              Internal ID: <span style={{ fontSize: 11 }}>{order.id}</span>
-              <br />
-              {/* Status + Save inline */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
+                <span style={{ opacity: 0.8 }}>Status</span>
+                <span
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background: statusColor,
+                    color: "#f9fafb",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textTransform: "capitalize",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {STATUS_LABELS[order.status] ?? order.status ?? "Pending"}
+                </span>
+              </div>
+
               <div
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
-                  alignItems: "center",
                   gap: 8,
-                  marginTop: 6,
+                  alignItems: "center",
                 }}
               >
-                <span>Status:</span>
                 <select
                   value={order.status}
                   onChange={(e) => handleStatusChange(e.target.value)}
@@ -1033,6 +1053,7 @@ export default function OrderDetailPage() {
                     </option>
                   ))}
                 </select>
+
                 <button
                   type="button"
                   onClick={saveStatus}
@@ -1045,18 +1066,15 @@ export default function OrderDetailPage() {
                     color: savingStatus ? "#9ca3af" : "#000",
                     fontSize: 11,
                     cursor: savingStatus ? "default" : "pointer",
-                    whiteSpace: "nowrap",
                   }}
                 >
                   {savingStatus ? "Saving…" : "Save status"}
                 </button>
               </div>
-              <span style={{ opacity: 0.7, display: "inline-block", marginTop: 4 }}>
-                Current: {statusLabel || "Unknown"}
-              </span>
             </div>
           </div>
 
+          {/* PARTY */}
           <div className="card">
             <div className="card-label">Party</div>
             <div className="card-value" style={{ fontSize: 16 }}>
@@ -1067,6 +1085,7 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
+          {/* DATES */}
           <div className="card">
             <div className="card-label">Dates</div>
 
@@ -1166,6 +1185,7 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
+          {/* TOTALS */}
           <div className="card">
             <div className="card-label">Totals</div>
             <div className="card-value" style={{ fontSize: 16 }}>
@@ -1218,13 +1238,13 @@ export default function OrderDetailPage() {
           <textarea
             value={orderRemarks}
             onChange={(e) => setOrderRemarks(e.target.value)}
-            rows={3}
+            rows={1}
             placeholder="Add any remarks for this order…"
             style={{
               width: "100%",
               marginTop: 6,
               fontSize: 12,
-              lineHeight: 1.5,
+              lineHeight: 1.4,
               padding: 8,
               borderRadius: 8,
               border: "1px solid #333",
@@ -1232,6 +1252,7 @@ export default function OrderDetailPage() {
               color: "#f5f5f5",
               resize: "vertical",
               whiteSpace: "pre-wrap",
+              minHeight: 34,
             }}
           />
 
@@ -1281,95 +1302,101 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Dispatch date – highlighted */}
+          {/* Dispatch date + helper text */}
           <div
             style={{
-              marginTop: 8,
+              marginTop: 10,
               marginBottom: 8,
               display: "flex",
               flexWrap: "wrap",
-              gap: 10,
-              alignItems: "center",
+              gap: 12,
+              alignItems: "stretch",
               justifyContent: "space-between",
               fontSize: 12,
             }}
           >
-            <span style={{ opacity: 0.85 }}>
+            <div
+              style={{
+                flex: "1 1 220px",
+                opacity: 0.85,
+                paddingRight: 8,
+              }}
+            >
               Enter <strong>"Dispatched Now"</strong> quantities for the date
-              shown on the right.
-            </span>
+              shown on the right. Pending items stay on top; once an item is
+              fully dispatched it moves to the table below.
+            </div>
 
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "6px 12px",
+                flex: "0 0 auto",
+                padding: "8px 14px",
                 borderRadius: 999,
-                border: "1px solid #0ea5e9",
+                border: "1px solid #38bdf8",
                 background:
-                  "radial-gradient(circle at top left, rgba(56,189,248,0.25), transparent 55%)",
-                boxShadow:
-                  "0 0 0 1px rgba(15,23,42,0.8), 0 0 18px rgba(56,189,248,0.35)",
+                  "radial-gradient(circle at top left, rgba(56,189,248,0.18), rgba(0,0,0,0.7))",
+                boxShadow: "0 0 0 1px rgba(15,23,42,0.9)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                minWidth: 230,
               }}
             >
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: 0.08,
+                  textTransform: "uppercase",
+                  color: "#e0f2fe",
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.08,
-                    opacity: 0.9,
-                  }}
-                >
-                  Dispatch date
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    opacity: 0.75,
-                  }}
-                >
-                  Make sure this is correct before saving dispatch.
-                </span>
+                Dispatch date
               </div>
-
-              <input
-                type="date"
-                value={dispatchDate}
-                onChange={(e) => setDispatchDate(e.target.value)}
+              <div
                 style={{
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  border: "1px solid #38bdf8",
-                  background: "#020617",
-                  color: "#f5f5f5",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  minWidth: 150,
+                  fontSize: 10,
+                  opacity: 0.9,
+                  color: "#bae6fd",
                 }}
-              />
+              >
+                Make sure this is correct before saving dispatch.
+              </div>
+              <div style={{ marginTop: 4 }}>
+                <input
+                  type="date"
+                  value={dispatchDate}
+                  onChange={(e) => setDispatchDate(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #0ea5e9",
+                    background: "#020617",
+                    color: "#e5f7ff",
+                    fontSize: 12,
+                    minWidth: 160,
+                  }}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Pending / partially-dispatched table */}
+          {/* PENDING / PARTIALLY DISPATCHED TABLE */}
+          <div
+            style={{
+              marginTop: 6,
+              marginBottom: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: 0.06,
+              opacity: 0.9,
+            }}
+          >
+            Pending / partially dispatched items
+          </div>
+
           <div className="table-wrapper" style={{ marginTop: 4 }}>
-            <div
-              style={{
-                fontSize: 12,
-                opacity: 0.9,
-                marginBottom: 4,
-                fontWeight: 500,
-              }}
-            >
-              Pending / partially dispatched items
-            </div>
             <table className="table">
               <thead>
                 <tr>
@@ -1384,149 +1411,58 @@ export default function OrderDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {enrichedPendingLines.map((row) => (
-                  <tr key={row.line.id}>
-                    <td>{row.itemName}</td>
-                    <td
-                      style={{
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      ₹ {row.rate.toLocaleString("en-IN")}
-                    </td>
-                    <td>{row.ordered} pcs</td>
-                    <td>{row.dispatched} pcs</td>
-                    <td>{row.pending} pcs</td>
-                    <td>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={dispatchedNow[row.line.id] ?? ""}
-                        onChange={(e) =>
-                          handleDispatchedNowChange(
-                            row.line.id,
-                            e.target.value
-                          )
-                        }
-                        placeholder="0"
-                        style={{
-                          width: 80,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          border: "1px solid #333",
-                          background: "#050505",
-                          color: "#f5f5f5",
-                          fontSize: 12,
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        value={row.line.line_remarks || ""}
-                        onChange={(e) =>
-                          handleNoteChange(row.line.id, e.target.value)
-                        }
-                        placeholder="Colour / customisation..."
-                        style={{
-                          width: "100%",
-                          padding: "4px 8px",
-                          borderRadius: 8,
-                          border: "1px solid #333",
-                          background: "#050505",
-                          color: "#f5f5f5",
-                          fontSize: 12,
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => deleteLine(row.line)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 999,
-                          border: "1px solid #333",
-                          background: "transparent",
-                          color: "#aaa",
-                          fontSize: 12,
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {pendingLines.map((l: any) => {
+                  const itemRel = l.items;
+                  const item =
+                    itemRel && Array.isArray(itemRel) && itemRel.length > 0
+                      ? itemRel[0]
+                      : itemRel || null;
 
-                {lines.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      style={{ textAlign: "center", padding: 12 }}
-                    >
-                      No line items found for this order.
-                    </td>
-                  </tr>
-                )}
+                  const { ordered, dispatched, pending } = getLineStats(l);
 
-                {lines.length > 0 && enrichedPendingLines.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      style={{ textAlign: "center", padding: 10, fontSize: 12 }}
-                    >
-                      No pending items · all lines are fully dispatched.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Fully dispatched items table */}
-          {enrichedCompletedLines.length > 0 && (
-            <div className="table-wrapper" style={{ marginTop: 16 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  opacity: 0.9,
-                  marginBottom: 4,
-                  fontWeight: 500,
-                }}
-              >
-                Fully dispatched items
-              </div>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ width: "30%" }}>Item</th>
-                    <th>Rate</th>
-                    <th>Ordered</th>
-                    <th>Dispatched</th>
-                    <th>Notes</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {enrichedCompletedLines.map((row) => (
-                    <tr key={row.line.id}>
-                      <td>{row.itemName}</td>
+                  return (
+                    <tr key={l.id}>
+                      <td>{item?.name ?? "Unknown item"}</td>
                       <td
                         style={{
                           whiteSpace: "nowrap",
                         }}
                       >
-                        ₹ {row.rate.toLocaleString("en-IN")}
+                        ₹{" "}
+                        {(l.dealer_rate_at_order ?? 0).toLocaleString(
+                          "en-IN"
+                        )}
                       </td>
-                      <td>{row.ordered} pcs</td>
-                      <td>{row.dispatched} pcs</td>
+                      <td>{ordered} pcs</td>
+                      <td>{dispatched} pcs</td>
+                      <td>{pending} pcs</td>
                       <td>
                         <input
                           type="text"
-                          value={row.line.line_remarks || ""}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={dispatchedNow[l.id] ?? ""}
                           onChange={(e) =>
-                            handleNoteChange(row.line.id, e.target.value)
+                            handleDispatchedNowChange(l.id, e.target.value)
+                          }
+                          placeholder="0"
+                          style={{
+                            width: 80,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: "#050505",
+                            color: "#f5f5f5",
+                            fontSize: 12,
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={l.line_remarks || ""}
+                          onChange={(e) =>
+                            handleNoteChange(l.id, e.target.value)
                           }
                           placeholder="Colour / customisation..."
                           style={{
@@ -1543,7 +1479,7 @@ export default function OrderDetailPage() {
                       <td>
                         <button
                           type="button"
-                          onClick={() => deleteLine(row.line)}
+                          onClick={() => deleteLine(l)}
                           style={{
                             padding: "4px 10px",
                             borderRadius: 999,
@@ -1557,10 +1493,135 @@ export default function OrderDetailPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  );
+                })}
+
+                {pendingLines.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      style={{ textAlign: "center", padding: 12 }}
+                    >
+                      No pending items · everything is fully dispatched.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* FULLY DISPATCHED TABLE */}
+          {fullyDispatchedLines.length > 0 && (
+            <>
+              <div
+                style={{
+                  marginTop: 14,
+                  marginBottom: 4,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.06,
+                  opacity: 0.9,
+                }}
+              >
+                Fully dispatched items
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  opacity: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                Dispatch date:{" "}
+                {dispatchDate
+                  ? new Date(dispatchDate).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "2-digit",
+                    })
+                  : "Not set"}
+              </div>
+
+              <div className="table-wrapper" style={{ marginTop: 2 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "30%" }}>Item</th>
+                      <th>Rate</th>
+                      <th>Ordered</th>
+                      <th>Dispatched</th>
+                      <th>Notes</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fullyDispatchedLines.map((l: any) => {
+                      const itemRel = l.items;
+                      const item =
+                        itemRel && Array.isArray(itemRel) && itemRel.length > 0
+                          ? itemRel[0]
+                          : itemRel || null;
+
+                      const { ordered, dispatched } = getLineStats(l);
+
+                      return (
+                        <tr key={l.id}>
+                          <td>{item?.name ?? "Unknown item"}</td>
+                          <td
+                            style={{
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            ₹{" "}
+                            {(l.dealer_rate_at_order ?? 0).toLocaleString(
+                              "en-IN"
+                            )}
+                          </td>
+                          <td>{ordered} pcs</td>
+                          <td>{dispatched} pcs</td>
+                          <td>
+                            <input
+                              type="text"
+                              value={l.line_remarks || ""}
+                              onChange={(e) =>
+                                handleNoteChange(l.id, e.target.value)
+                              }
+                              placeholder="Colour / customisation..."
+                              style={{
+                                width: "100%",
+                                padding: "4px 8px",
+                                borderRadius: 8,
+                                border: "1px solid #333",
+                                background: "#050505",
+                                color: "#f5f5f5",
+                                fontSize: 12,
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => deleteLine(l)}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #333",
+                                background: "transparent",
+                                color: "#aaa",
+                                fontSize: 12,
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {/* ADD NEW LINE UI */}
@@ -1709,10 +1770,10 @@ export default function OrderDetailPage() {
           width: "800px",
           backgroundColor: "#ffffff",
           color: "#111827",
-          padding: "26px 28px",
+          padding: "24px",
           fontFamily:
             "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-          fontSize: "12px",
+          fontSize: "11px",
         }}
       >
         {/* Header with logo + title */}
@@ -1720,14 +1781,14 @@ export default function OrderDetailPage() {
           style={{
             display: "flex",
             alignItems: "center",
-            marginBottom: 10,
-            gap: 14,
+            marginBottom: 8,
+            gap: 12,
           }}
         >
           <img
             src="/Tycoon_Logo.JPG"
             alt="Tycoon Logo"
-            style={{ height: 34 }}
+            style={{ height: 36 }}
           />
           <div>
             <div
@@ -1739,7 +1800,7 @@ export default function OrderDetailPage() {
             >
               TYCOON ORDER PORTAL
             </div>
-            <div style={{ fontSize: 11.5, color: "#4b5563", marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "#4b5563" }}>
               Order Sheet
             </div>
           </div>
@@ -1748,8 +1809,8 @@ export default function OrderDetailPage() {
         <hr
           style={{
             border: 0,
-            borderTop: "1.2px solid #d1d5db",
-            margin: "8px 0 14px",
+            borderTop: "1px solid #e5e7eb",
+            margin: "8px 0 16px",
           }}
         />
 
@@ -1765,17 +1826,15 @@ export default function OrderDetailPage() {
           <div style={{ flex: 1 }}>
             <div
               style={{
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 600,
                 marginBottom: 4,
               }}
             >
               Party details
             </div>
-            <div style={{ fontSize: 11.5, color: "#374151" }}>
-              <div style={{ fontWeight: 600 }}>
-                {party?.name ?? "Unknown party"}
-              </div>
+            <div style={{ fontSize: 11, color: "#374151" }}>
+              <div>{party?.name ?? "Unknown party"}</div>
               <div>{party?.city ?? ""}</div>
             </div>
           </div>
@@ -1783,30 +1842,26 @@ export default function OrderDetailPage() {
           <div style={{ flex: 1 }}>
             <div
               style={{
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 600,
                 marginBottom: 4,
               }}
             >
               Order details
             </div>
-            <div style={{ fontSize: 11.5, color: "#374151" }}>
+            <div style={{ fontSize: 11, color: "#374151" }}>
+              <div>Order code: {displayCode}</div>
               <div>
-                <strong>Order code:</strong> {displayCode}
-              </div>
-              <div>
-                <strong>Order date:</strong>{" "}
+                Order date:{" "}
                 {order.order_date
                   ? new Date(order.order_date).toLocaleDateString(
                       "en-IN"
                     )
                   : "Not set"}
               </div>
+              <div>Status: {statusLabel}</div>
               <div>
-                <strong>Status:</strong> {statusLabel}
-              </div>
-              <div>
-                <strong>Expected dispatch:</strong>{" "}
+                Expected dispatch:{" "}
                 {order.expected_dispatch_date
                   ? new Date(
                       order.expected_dispatch_date
@@ -1814,8 +1869,8 @@ export default function OrderDetailPage() {
                   : "Not set"}
               </div>
               <div>
-                <strong>Dispatched:</strong> {totalDispatched} / {totalOrdered}{" "}
-                pcs ({fulfillmentPercent}%)
+                Dispatched: {totalDispatched} / {totalOrdered} pcs (
+                {fulfillmentPercent}%)
               </div>
             </div>
           </div>
@@ -1825,7 +1880,7 @@ export default function OrderDetailPage() {
         {order.remarks && (
           <div
             style={{
-              fontSize: 11.5,
+              fontSize: 11,
               color: "#374151",
               marginBottom: 12,
             }}
@@ -1841,11 +1896,10 @@ export default function OrderDetailPage() {
             <div
               style={{
                 whiteSpace: "pre-wrap",
-                border: "1px solid #d1d5db",
+                border: "1px solid #e5e7eb",
                 borderRadius: 4,
                 padding: 8,
                 backgroundColor: "#f9fafb",
-                lineHeight: 1.4,
               }}
             >
               {order.remarks}
@@ -1853,13 +1907,25 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {/* Items table – light theme, notes shown under item */}
+        {/* Pending / partially dispatched table */}
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: 0.06,
+            marginBottom: 4,
+          }}
+        >
+          Pending / partially dispatched items
+        </div>
+
         <table
           style={{
             width: "100%",
             borderCollapse: "collapse",
             marginTop: 4,
-            border: "1px solid #9ca3af",
+            border: "1px solid #d1d5db",
           }}
         >
           <thead>
@@ -1869,12 +1935,12 @@ export default function OrderDetailPage() {
                   key={h}
                   style={{
                     textAlign: "left",
-                    border: "1px solid #9ca3af",
-                    padding: "6px 7px",
+                    border: "1px solid #d1d5db",
+                    padding: "6px 6px",
                     fontWeight: 700,
-                    fontSize: 11.5,
+                    fontSize: 11,
                     color: "#111827",
-                    backgroundColor: "#e5e7eb",
+                    backgroundColor: "#f3f4f6",
                   }}
                 >
                   {h}
@@ -1883,57 +1949,38 @@ export default function OrderDetailPage() {
             </tr>
           </thead>
           <tbody>
-            {lines.map((l: any, index: number) => {
+            {pendingLines.map((l: any) => {
               const itemRel = l.items;
               const item =
                 itemRel && Array.isArray(itemRel) && itemRel.length > 0
                   ? itemRel[0]
                   : itemRel || null;
 
-              const ordered = l.qty ?? 0;
-
-              const rawDispatched =
-                l.dispatched_qty === "" || l.dispatched_qty == null
-                  ? 0
-                  : Number(l.dispatched_qty);
-
-              let dispatched = Number.isNaN(rawDispatched)
-                ? 0
-                : rawDispatched;
-
-              if (dispatched < 0) dispatched = 0;
-              if (dispatched > ordered) dispatched = ordered;
-
-              const pending = Math.max(ordered - dispatched, 0);
+              const { ordered, dispatched, pending } = getLineStats(l);
               const note =
                 typeof l.line_remarks === "string" &&
                 l.line_remarks.trim() !== ""
                   ? l.line_remarks.trim()
                   : null;
 
-              const rowBg =
-                index % 2 === 0 ? "#ffffff" : "#f9fafb";
-
               return (
-                <tr key={l.id} style={{ backgroundColor: rowBg }}>
+                <tr key={l.id}>
                   <td
                     style={{
-                      padding: "5px 7px",
-                      border: "1px solid #d1d5db",
-                      fontSize: 11.5,
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
+                      fontSize: 11,
                       color: "#111827",
                       verticalAlign: "top",
                     }}
                   >
-                    <div style={{ fontWeight: 500 }}>
-                      {item?.name ?? "Unknown item"}
-                    </div>
+                    <div>{item?.name ?? "Unknown item"}</div>
                     {note && (
                       <div
                         style={{
                           marginTop: 2,
-                          fontSize: 10.5,
-                          color: "#4b5563",
+                          fontSize: 10,
+                          color: "#6b7280",
                           fontStyle: "italic",
                         }}
                       >
@@ -1944,10 +1991,10 @@ export default function OrderDetailPage() {
 
                   <td
                     style={{
-                      padding: "5px 7px",
-                      border: "1px solid #d1d5db",
-                      fontSize: 11.5,
-                      color: "#111827",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
+                      fontSize: 11,
+                      color: "#4b5563",
                       textAlign: "right",
                     }}
                   >
@@ -1956,10 +2003,10 @@ export default function OrderDetailPage() {
 
                   <td
                     style={{
-                      padding: "5px 7px",
-                      border: "1px solid #d1d5db",
-                      fontSize: 11.5,
-                      color: "#111827",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
+                      fontSize: 11,
+                      color: "#4b5563",
                       textAlign: "right",
                     }}
                   >
@@ -1968,10 +2015,10 @@ export default function OrderDetailPage() {
 
                   <td
                     style={{
-                      padding: "5px 7px",
-                      border: "1px solid #d1d5db",
-                      fontSize: 11.5,
-                      color: "#111827",
+                      padding: "4px 6px",
+                      border: "1px solid #e5e7eb",
+                      fontSize: 11,
+                      color: "#4b5563",
                       textAlign: "right",
                     }}
                   >
@@ -1981,7 +2028,7 @@ export default function OrderDetailPage() {
               );
             })}
 
-            {lines.length === 0 && (
+            {pendingLines.length === 0 && (
               <tr>
                 <td
                   colSpan={4}
@@ -1992,34 +2039,138 @@ export default function OrderDetailPage() {
                     color: "#6b7280",
                   }}
                 >
-                  No line items found for this order.
+                  No pending items.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
 
-        {/* Small totals footer for readability */}
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 11.5,
-            color: "#111827",
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 16,
-          }}
-        >
-          <span>
-            <strong>Total ordered:</strong> {totalOrdered} pcs
-          </span>
-          <span>
-            <strong>Total dispatched:</strong> {totalDispatched} pcs
-          </span>
-          <span>
-            <strong>Pending:</strong> {totalOrdered - totalDispatched} pcs
-          </span>
-        </div>
+        {/* Fully dispatched table */}
+        {fullyDispatchedLines.length > 0 && (
+          <>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: 0.06,
+                marginTop: 14,
+                marginBottom: 2,
+              }}
+            >
+              Fully dispatched items
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "#4b5563",
+                marginBottom: 4,
+              }}
+            >
+              Dispatch date:{" "}
+              {dispatchDate
+                ? new Date(dispatchDate).toLocaleDateString("en-IN")
+                : "Not set"}
+            </div>
+
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                marginTop: 2,
+                border: "1px solid #d1d5db",
+              }}
+            >
+              <thead>
+                <tr>
+                  {["Item", "Ordered", "Dispatched"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: "left",
+                        border: "1px solid #d1d5db",
+                        padding: "6px 6px",
+                        fontWeight: 700,
+                        fontSize: 11,
+                        color: "#111827",
+                        backgroundColor: "#f3f4f6",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fullyDispatchedLines.map((l: any) => {
+                  const itemRel = l.items;
+                  const item =
+                    itemRel && Array.isArray(itemRel) && itemRel.length > 0
+                      ? itemRel[0]
+                      : itemRel || null;
+
+                  const { ordered, dispatched } = getLineStats(l);
+                  const note =
+                    typeof l.line_remarks === "string" &&
+                    l.line_remarks.trim() !== ""
+                      ? l.line_remarks.trim()
+                      : null;
+
+                  return (
+                    <tr key={l.id}>
+                      <td
+                        style={{
+                          padding: "4px 6px",
+                          border: "1px solid #e5e7eb",
+                          fontSize: 11,
+                          color: "#111827",
+                          verticalAlign: "top",
+                        }}
+                      >
+                        <div>{item?.name ?? "Unknown item"}</div>
+                        {note && (
+                          <div
+                            style={{
+                              marginTop: 2,
+                              fontSize: 10,
+                              color: "#6b7280",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            Note: {note}
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          padding: "4px 6px",
+                          border: "1px solid #e5e7eb",
+                          fontSize: 11,
+                          color: "#4b5563",
+                          textAlign: "right",
+                        }}
+                      >
+                        {ordered}
+                      </td>
+                      <td
+                        style={{
+                          padding: "4px 6px",
+                          border: "1px solid #e5e7eb",
+                          fontSize: 11,
+                          color: "#4b5563",
+                          textAlign: "right",
+                        }}
+                      >
+                        {dispatched}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
+        )}
       </div>
 
       {/* ACTIONS */}
@@ -2049,8 +2200,6 @@ export default function OrderDetailPage() {
             ? "Saving…"
             : "Save dispatch quantities & notes"}
         </button>
-
-        {/* Save status button moved into the top card, so removed here */}
 
         <button
           className="pill-button"
