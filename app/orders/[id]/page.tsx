@@ -46,6 +46,17 @@ function getTodayISO() {
   return `${y}-${m}-${day}`;
 }
 
+function formatDateShort(dateInput: string | Date, withYearShort = true) {
+  const d = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(d.getTime())) return "Invalid date";
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+  };
+  if (withYearShort) opts.year = "2-digit";
+  return d.toLocaleDateString("en-IN", opts);
+}
+
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -77,11 +88,15 @@ export default function OrderDetailPage() {
   const [newLineNote, setNewLineNote] = useState("");
   const [savingNewLine, setSavingNewLine] = useState(false);
 
+  // Dispatch history (for correct dates)
+  const [dispatchEvents, setDispatchEvents] = useState<any[]>([]);
+
   useEffect(() => {
     if (!orderId) return;
     loadOrder();
     loadItems();
     loadLogs();
+    loadDispatchEvents();
   }, [orderId]);
 
   async function loadOrder() {
@@ -172,6 +187,22 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function loadDispatchEvents() {
+    if (!orderId) return;
+    const { data, error } = await supabase
+      .from("dispatch_events")
+      .select("order_line_id, dispatched_qty, dispatched_at")
+      .eq("order_id", orderId)
+      .order("dispatched_at", { ascending: true });
+
+    if (error) {
+      console.error("Error loading dispatch events", error);
+      setDispatchEvents([]);
+    } else {
+      setDispatchEvents(data || []);
+    }
+  }
+
   // ---------- INLINE EDIT HANDLERS ----------
 
   // "Dispatched Now" is incremental: how many pcs dispatched on the chosen date.
@@ -242,7 +273,7 @@ export default function OrderDetailPage() {
       }
       const lines = order.order_lines || [];
       const logsToInsert: { order_id: string; message: string }[] = [];
-      const dispatchEvents: {
+      const dispatchEventsToInsert: {
         order_id: string;
         order_line_id: string;
         dispatched_qty: number;
@@ -313,7 +344,7 @@ export default function OrderDetailPage() {
 
         // Prepare dispatch event for this line if delta > 0
         if (delta > 0) {
-          dispatchEvents.push({
+          dispatchEventsToInsert.push({
             order_id: order.id,
             order_line_id: lineId,
             dispatched_qty: delta,
@@ -367,10 +398,10 @@ export default function OrderDetailPage() {
       }
 
       // 1) Insert dispatch events (if any)
-      if (dispatchEvents.length > 0) {
+      if (dispatchEventsToInsert.length > 0) {
         const { error: evErr } = await supabase
           .from("dispatch_events")
-          .insert(dispatchEvents);
+          .insert(dispatchEventsToInsert);
         if (evErr) {
           console.error("Error inserting dispatch_events", evErr);
           alert("Error saving dispatch events: " + evErr.message);
@@ -446,6 +477,7 @@ export default function OrderDetailPage() {
       alert("Dispatch and notes updated.");
       await loadOrder();
       await loadLogs();
+      await loadDispatchEvents(); // refresh dispatch history
 
       // Reset "dispatched now" inputs
       setDispatchedNow((prev) => {
@@ -603,6 +635,7 @@ export default function OrderDetailPage() {
 
     await loadOrder();
     await loadLogs();
+    await loadDispatchEvents();
   }
 
   // ---------- ADD NEW LINE (WITH LOG) ----------
@@ -693,6 +726,7 @@ export default function OrderDetailPage() {
 
       await loadOrder();
       await loadLogs();
+      await loadDispatchEvents();
     } finally {
       setSavingNewLine(false);
     }
@@ -839,6 +873,44 @@ export default function OrderDetailPage() {
     if (ed < today && st !== "dispatched") {
       isOverdue = true;
     }
+  }
+
+  // Build summary + per-line last dispatch dates from dispatchEvents
+  const dispatchDatesSet = new Set<string>();
+  const lineLastDispatch: Record<string, string> = {};
+
+  dispatchEvents.forEach((ev) => {
+    if (!ev.dispatched_at) return;
+    const dateOnly = ev.dispatched_at.slice(0, 10); // YYYY-MM-DD
+    dispatchDatesSet.add(dateOnly);
+
+    const existing = lineLastDispatch[ev.order_line_id];
+    if (!existing) {
+      lineLastDispatch[ev.order_line_id] = ev.dispatched_at;
+    } else if (
+      new Date(ev.dispatched_at).getTime() >
+      new Date(existing).getTime()
+    ) {
+      lineLastDispatch[ev.order_line_id] = ev.dispatched_at;
+    }
+  });
+
+  const dispatchDates = Array.from(dispatchDatesSet).sort();
+  let dispatchSummaryLabel = "Dispatch dates: Not set";
+
+  if (dispatchDates.length === 1) {
+    dispatchSummaryLabel = `Dispatch date: ${formatDateShort(
+      dispatchDates[0]
+    )}`;
+  } else if (dispatchDates.length > 1 && dispatchDates.length <= 3) {
+    const labels = dispatchDates.map((d) => formatDateShort(d));
+    dispatchSummaryLabel = `Dispatch dates: ${labels.join(", ")}`;
+  } else if (dispatchDates.length > 3) {
+    const firstLabel = formatDateShort(dispatchDates[0]);
+    const lastLabel = formatDateShort(
+      dispatchDates[dispatchDates.length - 1]
+    );
+    dispatchSummaryLabel = `Dispatch dates: ${firstLabel} – ${lastLabel} (${dispatchDates.length} batches)`;
   }
 
   function buildWhatsAppText() {
@@ -1347,7 +1419,7 @@ export default function OrderDetailPage() {
               />
             </div>
           </div>
-          
+
           {/* PENDING / PARTIALLY DISPATCHED TABLE */}
           <div
             style={{
@@ -1500,14 +1572,7 @@ export default function OrderDetailPage() {
                   marginBottom: 4,
                 }}
               >
-                Dispatch date:{" "}
-                {dispatchDate
-                  ? new Date(dispatchDate).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "2-digit",
-                    })
-                  : "Not set"}
+                {dispatchSummaryLabel}
               </div>
 
               <div className="table-wrapper" style={{ marginTop: 2 }}>
@@ -1518,6 +1583,7 @@ export default function OrderDetailPage() {
                       <th>Rate</th>
                       <th>Ordered</th>
                       <th>Dispatched</th>
+                      <th>Last dispatched on</th>
                       <th>Notes</th>
                       <th />
                     </tr>
@@ -1531,6 +1597,7 @@ export default function OrderDetailPage() {
                           : itemRel || null;
 
                       const { ordered, dispatched } = getLineStats(l);
+                      const lastForLine = lineLastDispatch[l.id] || null;
 
                       return (
                         <tr key={l.id}>
@@ -1547,6 +1614,11 @@ export default function OrderDetailPage() {
                           </td>
                           <td>{ordered} pcs</td>
                           <td>{dispatched} pcs</td>
+                          <td>
+                            {lastForLine
+                              ? formatDateShort(lastForLine)
+                              : "-"}
+                          </td>
                           <td>
                             <input
                               type="text"
@@ -2035,10 +2107,7 @@ export default function OrderDetailPage() {
                 marginBottom: 4,
               }}
             >
-              Dispatch date:{" "}
-              {dispatchDate
-                ? new Date(dispatchDate).toLocaleDateString("en-IN")
-                : "Not set"}
+              {dispatchSummaryLabel}
             </div>
 
             <table
