@@ -69,8 +69,9 @@ function VegaLiteChart({
 
 type SalesPoint = {
   date: string;   // "2025-01-23"
-  qty: number;    // total pcs that day
-  value: number;  // total value that day
+  qty: number;    // total pcs that day (Tycoon only)
+  value: number;  // total value that day (Tycoon only)
+  items_breakdown: string; // "Everest: 10, Robo Car: 5"
 };
 
 function SalesChartCard() {
@@ -100,7 +101,11 @@ function SalesChartCard() {
         dispatched_at,
         dispatched_qty,
         order_lines:order_line_id (
-          dealer_rate_at_order
+          dealer_rate_at_order,
+          items (
+            name,
+            company
+          )
         )
       `
       )
@@ -115,32 +120,60 @@ function SalesChartCard() {
       return;
     }
 
-    const grouped: Record<string, { qty: number; value: number }> = {};
+    // Group by date, Tycoon only, and build per-date item breakdown
+    const grouped: Record<
+      string,
+      { qty: number; value: number; items: Record<string, number> }
+    > = {};
 
     (data || []).forEach((row: any) => {
       const dateStr = row.dispatched_at;
       if (!dateStr) return;
 
       const qty = Number(row.dispatched_qty ?? 0);
-      const rate = Number(
-        row.order_lines?.dealer_rate_at_order ?? 0
-      );
+      if (!qty || qty <= 0) return;
+
+      const line = row.order_lines;
+      const itemRel = line?.items;
+      const item =
+        itemRel && Array.isArray(itemRel) && itemRel.length > 0
+          ? itemRel[0]
+          : itemRel || null;
+
+      const company = item?.company || "Unknown";
+      if (company !== "Tycoon") {
+        // Only count Tycoon items in this chart
+        return;
+      }
+
+      const itemName = item?.name || "Unknown item";
+      const rate = Number(line?.dealer_rate_at_order ?? 0);
       const val = qty * rate;
 
       if (!grouped[dateStr]) {
-        grouped[dateStr] = { qty: 0, value: 0 };
+        grouped[dateStr] = { qty: 0, value: 0, items: {} };
       }
       grouped[dateStr].qty += qty;
       grouped[dateStr].value += val;
+      grouped[dateStr].items[itemName] =
+        (grouped[dateStr].items[itemName] ?? 0) + qty;
     });
 
     // Turn into sorted array
     const points: SalesPoint[] = Object.entries(grouped)
-      .map(([date, { qty, value }]) => ({
-        date,
-        qty,
-        value,
-      }))
+      .map(([date, { qty, value, items }]) => {
+        const breakdownParts = Object.entries(items)
+          .sort((a, b) => b[1] - a[1]) // highest qty first
+          .map(([name, q]) => `${name}: ${q}`);
+        const items_breakdown = breakdownParts.join(", ");
+
+        return {
+          date,
+          qty,
+          value,
+          items_breakdown,
+        };
+      })
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
     setData(points);
@@ -167,16 +200,21 @@ function SalesChartCard() {
           y: {
             field: "qty",
             type: "quantitative",
-            title: "Pcs dispatched",
+            title: "Pcs dispatched (Tycoon)",
           },
           tooltip: [
             { field: "date", type: "temporal", title: "Date" },
-            { field: "qty", type: "quantitative", title: "Pcs" },
+            { field: "qty", type: "quantitative", title: "Pcs (Tycoon)" },
             {
               field: "value",
               type: "quantitative",
-              title: "Value (₹)",
+              title: "Value (₹, Tycoon)",
               format: ",.0f",
+            },
+            {
+              field: "items_breakdown",
+              type: "nominal",
+              title: "Items (pcs)",
             },
           ],
         },
@@ -188,7 +226,7 @@ function SalesChartCard() {
             field: "value",
             type: "quantitative",
             axis: {
-              title: "Value (₹)",
+              title: "Value (₹, Tycoon)",
             },
           },
         },
@@ -200,10 +238,11 @@ function SalesChartCard() {
   return (
     <div className="card">
       <div className="card-label">
-        Dispatch-based sales (last 60 days)
+        Dispatch-based sales (last 60 days · Tycoon only)
       </div>
       <div className="card-meta" style={{ fontSize: 11, opacity: 0.7 }}>
-        Uses <code>dispatch_events</code> · pcs (bars) &amp; value (line)
+        Uses <code>dispatch_events</code> · pcs (bars) &amp; value (line) · hover
+        a bar to see item-wise qty.
       </div>
 
       {loading && (
@@ -223,7 +262,7 @@ function SalesChartCard() {
 
       {!loading && !error && data.length === 0 && (
         <div style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>
-          No dispatch events in the last 60 days.
+          No Tycoon dispatch events in the last 60 days.
         </div>
       )}
 
@@ -249,7 +288,13 @@ type OrderWithLines = {
     dispatched_qty: number | null | string;
     dealer_rate_at_order: number | null;
     line_total: number | null;
-    items: { name: string | null; category: string | null } | any;
+    items:
+      | {
+          name: string | null;
+          category: string | null;
+          company: string | null;
+        }
+      | any;
   }[];
 };
 
@@ -301,7 +346,8 @@ export default function DashboardPage() {
           line_total,
           items (
             name,
-            category
+            category,
+            company
           )
         )
       `
@@ -382,8 +428,8 @@ export default function DashboardPage() {
   } = useMemo(() => {
     const result = {
       totalOrders: 0,
-      totalQty: 0,
-      totalValue: 0,
+      totalQty: 0, // Tycoon only
+      totalValue: 0, // Tycoon only
       itemDemandArray: [] as any[],
       itemPendingArray: [] as any[],
       categoryDemandArray: [] as any[],
@@ -421,52 +467,39 @@ export default function DashboardPage() {
 
     result.totalOrders = filteredOrders.length;
 
-    // 👇 Compute totalQty & totalValue from order_lines (line_total / rate * qty)
-    let grandQty = 0;
-    let grandValue = 0;
-
-    for (const o of filteredOrders) {
-      const lines = o.order_lines || [];
-
-      const orderQty = lines.reduce((sum, l) => sum + (l.qty ?? 0), 0);
-
-      const orderValue = lines.reduce((sum, l) => {
-        const qty = l.qty ?? 0;
-        const lineTotal =
-          typeof l.line_total === "number"
-            ? l.line_total
-            : (l.dealer_rate_at_order ?? 0) * qty;
-        return sum + lineTotal;
-      }, 0);
-
-      grandQty += orderQty;
-      grandValue += orderValue;
-    }
-
-    result.totalQty = grandQty;
-    result.totalValue = grandValue;
-
+    // We'll build:
+    // - allLines = all companies (for backlog & category)
+    // - allTycoonLines = only Tycoon (for totals + top items)
     const allLines: {
       itemName: string;
       category: string;
       ordered: number;
       dispatched: number;
       pending: number;
+      company: string;
     }[] = [];
+
+    const allTycoonLines: typeof allLines = [];
+
+    let grandQty = 0;   // Tycoon only
+    let grandValue = 0; // Tycoon only
 
     for (const o of filteredOrders) {
       const isProductionActive = PRODUCTION_ACTIVE_STATUSES.includes(
         o.status
       );
       const lines = o.order_lines || [];
+
       for (const l of lines) {
+        const itemRel = l.items;
         const item =
-          Array.isArray(l.items) && l.items.length > 0
-            ? l.items[0]
-            : l.items;
+          Array.isArray(itemRel) && itemRel.length > 0
+            ? itemRel[0]
+            : itemRel || null;
 
         const name = (item?.name || "Unknown item") as string;
         const category = (item?.category || "Uncategorised") as string;
+        const company = (item?.company || "Unknown") as string;
 
         const ordered = l.qty ?? 0;
 
@@ -478,23 +511,98 @@ export default function DashboardPage() {
         if (dispatched < 0) dispatched = 0;
         if (dispatched > ordered) dispatched = ordered;
 
-        // 👇 compute raw pending first
+        // compute raw pending first
         const pendingRaw = Math.max(ordered - dispatched, 0);
 
-        // 👇 then zero it out for closed statuses
+        // then zero it out for closed statuses
         const pending = isProductionActive ? pendingRaw : 0;
 
-        allLines.push({
+        const lineBase = {
           itemName: name,
           category,
           ordered,
           dispatched,
           pending,
-        });
+          company,
+        };
+
+        // All companies (for backlog & category)
+        allLines.push(lineBase);
+
+        // Tycoon-only stats
+        if (company === "Tycoon") {
+          allTycoonLines.push(lineBase);
+
+          grandQty += ordered;
+          const lineTotal =
+            typeof l.line_total === "number"
+              ? l.line_total
+              : (l.dealer_rate_at_order ?? 0) * ordered;
+          grandValue += lineTotal;
+        }
       }
     }
 
-    const byItem = new Map<
+    result.totalQty = grandQty;
+    result.totalValue = grandValue;
+
+    // ---- ITEM DEMAND (TYCOON ONLY) ----
+    const byItemTycoon = new Map<
+      string,
+      {
+        ordered: number;
+        dispatched: number;
+        pending: number;
+        category: string;
+        company: string;
+      }
+    >();
+
+    for (const l of allTycoonLines) {
+      const catKey =
+        l.category && l.category.trim() !== ""
+          ? l.category
+          : "Uncategorised";
+
+      if (!byItemTycoon.has(l.itemName)) {
+        byItemTycoon.set(l.itemName, {
+          ordered: 0,
+          dispatched: 0,
+          pending: 0,
+          category: catKey,
+          company: l.company,
+        });
+      }
+
+      const agg = byItemTycoon.get(l.itemName)!;
+      agg.ordered += l.ordered;
+      agg.dispatched += l.dispatched;
+      agg.pending += l.pending;
+
+      if (agg.category === "Uncategorised" && catKey !== "Uncategorised") {
+        agg.category = catKey;
+      }
+    }
+
+    const itemArrayTycoon = Array.from(byItemTycoon.entries()).map(
+      ([item, agg]) => ({
+        item,
+        ordered: agg.ordered,
+        dispatched: agg.dispatched,
+        pending: agg.pending,
+        category: agg.category,
+        company: agg.company,
+      })
+    );
+
+    // Top 12 by ordered for Tycoon chart
+    result.itemDemandArray = itemArrayTycoon
+      .filter((d) => d.ordered > 0)
+      .sort((a, b) => b.ordered - a.ordered)
+      .slice(0, 12);
+
+    // ---- BACKLOG (ALL COMPANIES) ----
+    const byItemAll = new Map<
       string,
       {
         ordered: number;
@@ -510,8 +618,8 @@ export default function DashboardPage() {
           ? l.category
           : "Uncategorised";
 
-      if (!byItem.has(l.itemName)) {
-        byItem.set(l.itemName, {
+      if (!byItemAll.has(l.itemName)) {
+        byItemAll.set(l.itemName, {
           ordered: 0,
           dispatched: 0,
           pending: 0,
@@ -519,7 +627,7 @@ export default function DashboardPage() {
         });
       }
 
-      const agg = byItem.get(l.itemName)!;
+      const agg = byItemAll.get(l.itemName)!;
       agg.ordered += l.ordered;
       agg.dispatched += l.dispatched;
       agg.pending += l.pending;
@@ -529,7 +637,7 @@ export default function DashboardPage() {
       }
     }
 
-    const itemArray = Array.from(byItem.entries()).map(
+    const itemArrayAll = Array.from(byItemAll.entries()).map(
       ([item, agg]) => ({
         item,
         ordered: agg.ordered,
@@ -539,14 +647,7 @@ export default function DashboardPage() {
       })
     );
 
-    // Top 12 by ordered for chart
-    result.itemDemandArray = itemArray
-      .filter((d) => d.ordered > 0)
-      .sort((a, b) => b.ordered - a.ordered)
-      .slice(0, 12);
-
-    // Full backlog list
-    const backlogItemsRaw = itemArray
+    const backlogItemsRaw = itemArrayAll
       .filter((d) => d.pending > 0)
       .map((d) => ({
         item: d.item,
@@ -560,13 +661,13 @@ export default function DashboardPage() {
 
     result.backlogItemsRaw = backlogItemsRaw;
 
-    // Top 12 pending for chart
+    // Top 12 pending for chart (all companies)
     const backlogSortedForChart = [...backlogItemsRaw].sort(
       (a, b) => b.pending - a.pending
     );
     result.itemPendingArray = backlogSortedForChart.slice(0, 12);
 
-    // Aggregate by category
+    // ---- CATEGORY DEMAND (ALL COMPANIES) ----
     const byCat = new Map<
       string,
       { ordered: number; dispatched: number; pending: number }
@@ -600,7 +701,7 @@ export default function DashboardPage() {
       .filter((d) => d.ordered > 0)
       .sort((a, b) => b.ordered - a.ordered);
 
-    // Per-order fulfilment
+    // ---- Per-order fulfilment (all companies) ----
     result.orderFulfillmentArray = filteredOrders.map((o) => {
       const lines = o.order_lines || [];
       const totalOrdered = lines.reduce(
@@ -703,7 +804,7 @@ export default function DashboardPage() {
   const itemDemandSpec = useMemo(
     () => ({
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      description: "Top items by ordered quantity",
+      description: "Top Tycoon items by ordered quantity",
       background: "transparent",
       width: "container",
       data: { values: itemDemandArray },
@@ -718,16 +819,16 @@ export default function DashboardPage() {
         x: {
           field: "ordered",
           type: "quantitative",
-          title: "Ordered qty (pcs)",
+          title: "Ordered qty (pcs, Tycoon)",
         },
         color: {
           value: "#f5f5f5",
         },
         tooltip: [
           { field: "item", title: "Item" },
-          { field: "ordered", title: "Ordered pcs" },
-          { field: "dispatched", title: "Dispatched pcs" },
-          { field: "pending", title: "Pending pcs" },
+          { field: "ordered", title: "Ordered pcs (Tycoon)" },
+          { field: "dispatched", title: "Dispatched pcs (Tycoon)" },
+          { field: "pending", title: "Pending pcs (Tycoon)" },
         ],
       },
       config: {
@@ -745,7 +846,7 @@ export default function DashboardPage() {
   const categoryDemandSpec = useMemo(
     () => ({
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      description: "Demand by category",
+      description: "Demand by category (all companies)",
       background: "transparent",
       width: "container",
       data: { values: categoryDemandArray },
@@ -760,7 +861,7 @@ export default function DashboardPage() {
         y: {
           field: "ordered",
           type: "quantitative",
-          title: "Ordered qty (pcs)",
+          title: "Ordered qty (pcs, all companies)",
         },
         color: {
           value: "#a855f7",
@@ -787,7 +888,7 @@ export default function DashboardPage() {
   const pendingItemsSpec = useMemo(
     () => ({
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      description: "Top pending items",
+      description: "Top pending items (all companies)",
       background: "transparent",
       width: "container",
       data: { values: itemPendingArray },
@@ -887,7 +988,8 @@ export default function DashboardPage() {
     <>
       <h1 className="section-title">Tycoon Dashboard</h1>
       <p className="section-subtitle">
-        Live snapshot of demand, backlog and fulfilment across all Tycoon orders.
+        Live snapshot of demand, backlog and fulfilment. Qty & value cards +
+        item demand and sales charts are Tycoon-only.
       </p>
 
       {/* DATE FILTERS */}
@@ -1045,22 +1147,26 @@ export default function DashboardPage() {
           <div className="card-label">Total Orders</div>
           <div className="card-value">{totalOrders}</div>
           <div className="card-meta">
-            All parties · all statuses
+            All parties · all statuses · all companies
           </div>
         </div>
 
         <div className="card">
-          <div className="card-label">Total Qty Ordered</div>
+          <div className="card-label">Total Qty Ordered (Tycoon)</div>
           <div className="card-value">{totalQty} pcs</div>
-          <div className="card-meta">Sum of all order lines</div>
+          <div className="card-meta">
+            Sum of Tycoon order lines in this date range
+          </div>
         </div>
 
         <div className="card">
-          <div className="card-label">Total Order Value</div>
+          <div className="card-label">Total Order Value (Tycoon)</div>
           <div className="card-value">
             ₹ {totalValue.toLocaleString("en-IN")}
           </div>
-          <div className="card-meta">Calculated from line totals</div>
+          <div className="card-meta">
+            Calculated from Tycoon line totals / rates
+          </div>
         </div>
 
         <div className="card">
@@ -1089,9 +1195,9 @@ export default function DashboardPage() {
             style={{ marginBottom: 18, gridTemplateColumns: "1.4fr 1fr" }}
           >
             <div className="card">
-              <div className="card-label">Top Items by Demand</div>
+              <div className="card-label">Top Tycoon Items by Demand</div>
               <div className="card-meta">
-                Hover bars · menu → export PNG/SVG.
+                Hover bars · Tycoon-only · menu → export PNG/SVG.
               </div>
               <div style={{ marginTop: 10 }}>
                 <VegaLiteChart spec={itemDemandSpec} height={320} />
@@ -1101,7 +1207,8 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-label">Demand by Category</div>
               <div className="card-meta">
-                Uses your item categories (jeep, medium jeep, bike, etc.).
+                Uses your item categories (jeep, medium jeep, bike, etc.) · all
+                companies.
               </div>
               <div style={{ marginTop: 10 }}>
                 <VegaLiteChart spec={categoryDemandSpec} height={320} />
@@ -1115,7 +1222,9 @@ export default function DashboardPage() {
             style={{ marginBottom: 18, gridTemplateColumns: "1.4fr 1fr" }}
           >
             <div className="card">
-              <div className="card-label">Backlog · Top Pending Items</div>
+              <div className="card-label">
+                Backlog · Top Pending Items (all companies)
+              </div>
               <div className="card-meta">
                 Focus production on big orange bars first.
               </div>
@@ -1144,7 +1253,8 @@ export default function DashboardPage() {
           <div className="card" style={{ marginBottom: 18 }}>
             <div className="card-label">Backlog Table · Pending by Item</div>
             <div className="card-meta">
-              Same data as the backlog chart, with sorting, filters & export.
+              Same data as the backlog chart (all companies), with sorting,
+              filters & export.
             </div>
 
             {/* Controls: sort + show all + CSV */}
