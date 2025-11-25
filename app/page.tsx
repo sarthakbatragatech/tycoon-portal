@@ -68,9 +68,9 @@ function VegaLiteChart({
 }
 
 type SalesPoint = {
-  date: string;   // "2025-01-23"
-  qty: number;    // total pcs that day (Tycoon only)
-  value: number;  // total value that day (Tycoon only)
+  date: string;          // "2025-01-23"
+  qty: number;           // total pcs that day (Tycoon only)
+  value: number;         // total value that day (Tycoon only)
   items_breakdown: string; // "Everest: 10, Robo Car: 5"
 };
 
@@ -194,22 +194,27 @@ function SalesChartCard() {
       },
     },
     layer: [
+      // BARS = REVENUE
       {
         mark: { type: "bar" },
         encoding: {
           y: {
-            field: "qty",
+            field: "value",
             type: "quantitative",
-            title: "Pcs dispatched (Tycoon)",
+            title: "Sales value (₹, Tycoon)",
           },
           tooltip: [
             { field: "date", type: "temporal", title: "Date" },
-            { field: "qty", type: "quantitative", title: "Pcs (Tycoon)" },
             {
               field: "value",
               type: "quantitative",
-              title: "Value (₹, Tycoon)",
+              title: "Sales value (₹, Tycoon)",
               format: ",.0f",
+            },
+            {
+              field: "qty",
+              type: "quantitative",
+              title: "Pcs dispatched (Tycoon)",
             },
             {
               field: "items_breakdown",
@@ -219,19 +224,21 @@ function SalesChartCard() {
           ],
         },
       },
+      // LINE = QTY
       {
         mark: { type: "line", point: true },
         encoding: {
           y: {
-            field: "value",
+            field: "qty",
             type: "quantitative",
             axis: {
-              title: "Value (₹, Tycoon)",
+              title: "Pcs dispatched (Tycoon)",
             },
           },
         },
       },
     ],
+    // two y-axes: left for value, right for qty
     resolve: { scale: { y: "independent" } },
   };
 
@@ -241,8 +248,7 @@ function SalesChartCard() {
         Dispatch-based sales (last 60 days · Tycoon only)
       </div>
       <div className="card-meta" style={{ fontSize: 11, opacity: 0.7 }}>
-        Uses <code>dispatch_events</code> · pcs (bars) &amp; value (line) · hover
-        a bar to see item-wise qty.
+        Bars = sales value · line = pcs · hover to see item-wise qty.
       </div>
 
       {loading && (
