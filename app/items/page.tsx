@@ -5,6 +5,13 @@ export const dynamic = "force-dynamic";
 import { Fragment, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+const COMPANY_OPTIONS = [
+  "Tycoon",
+  "Dolphin",
+  "Swanda",
+  "Clever Fox",
+] as const;
+
 type UIItem = {
   id: string;
   name: string;
@@ -12,6 +19,7 @@ type UIItem = {
   unit: string;
   is_active: boolean;
   dealer_rate: string; // string in UI for smooth editing
+  company: string; // Tycoon / Dolphin / Swanda / Clever Fox
 };
 
 export default function ItemsPage() {
@@ -25,6 +33,7 @@ export default function ItemsPage() {
   const [newCategory, setNewCategory] = useState(""); // dropdown, starts empty
   const [newRate, setNewRate] = useState("");
   const [newUnit, setNewUnit] = useState("pcs");
+  const [newCompany, setNewCompany] = useState("Tycoon");
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -36,7 +45,7 @@ export default function ItemsPage() {
 
     const { data, error } = await supabase
       .from("items")
-      .select("id, name, category, dealer_rate, unit, is_active")
+      .select("id, name, category, dealer_rate, unit, is_active, company")
       .order("name");
 
     if (error) {
@@ -57,6 +66,7 @@ export default function ItemsPage() {
         i.dealer_rate !== null && i.dealer_rate !== undefined
           ? String(i.dealer_rate)
           : "",
+      company: i.company || "Tycoon",
     }));
     setItems(mapped);
 
@@ -137,6 +147,7 @@ export default function ItemsPage() {
     }
 
     const categoryStr = item.category.trim(); // from dropdown
+    const companyStr = item.company.trim() || "Tycoon";
 
     setSavingItemId(id);
 
@@ -145,6 +156,7 @@ export default function ItemsPage() {
       .update({
         dealer_rate: rateNum,
         category: categoryStr || null,
+        company: companyStr,
       })
       .eq("id", id);
 
@@ -157,7 +169,7 @@ export default function ItemsPage() {
 
     setSavingItemId(null);
 
-    // Reload to refresh categories if needed
+    // Reload to refresh categories / values if needed
     await loadItems();
   }
 
@@ -179,6 +191,7 @@ export default function ItemsPage() {
     }
 
     const categoryStr = newCategory.trim(); // from dropdown; can be ""
+    const companyStr = newCompany.trim() || "Tycoon";
 
     setAdding(true);
 
@@ -191,9 +204,10 @@ export default function ItemsPage() {
           dealer_rate: rateNum,
           unit: newUnit.trim() || "pcs",
           is_active: true,
+          company: companyStr,
         },
       ])
-      .select("id, name, category, dealer_rate, unit, is_active")
+      .select("id, name, category, dealer_rate, unit, is_active, company")
       .single();
 
     if (error) {
@@ -213,6 +227,7 @@ export default function ItemsPage() {
         data.dealer_rate !== null && data.dealer_rate !== undefined
           ? String(data.dealer_rate)
           : "",
+      company: data.company || "Tycoon",
     };
 
     setItems((prev) => [...prev, newItem]);
@@ -229,7 +244,7 @@ export default function ItemsPage() {
       );
     }
 
-    // Clear form (keep selected category, so adding similar items is fast)
+    // Clear form (keep selected company & category)
     setNewName("");
     setNewRate("");
     setNewUnit("pcs");
@@ -240,20 +255,28 @@ export default function ItemsPage() {
 
   const grouped = new Map<string, UIItem[]>();
   for (const it of items) {
-    const key = it.category && it.category.trim() !== "" ? it.category : "Uncategorised";
+    const key =
+      it.category && it.category.trim() !== ""
+        ? it.category
+        : "Uncategorised";
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(it);
   }
 
   const sortedCategories = Array.from(grouped.keys()).sort((a, b) =>
-    a === "Uncategorised" ? 1 : b === "Uncategorised" ? -1 : a.localeCompare(b, "en", { sensitivity: "base" })
+    a === "Uncategorised"
+      ? 1
+      : b === "Uncategorised"
+      ? -1
+      : a.localeCompare(b, "en", { sensitivity: "base" })
   );
 
   return (
     <>
       <h1 className="section-title">Items</h1>
       <p className="section-subtitle">
-        Manage Tycoon items · categories · dealer rates · active / inactive.
+        Manage Tycoon items · companies · categories · dealer rates · active /
+        inactive.
       </p>
 
       {/* ADD NEW ITEM */}
@@ -264,11 +287,13 @@ export default function ItemsPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1.4fr 1.2fr 1fr auto",
+            gridTemplateColumns:
+              "2fr 1.4fr 1.4fr 1.2fr 1fr auto",
             gap: 8,
             alignItems: "center",
           }}
         >
+          {/* Name */}
           <input
             type="text"
             placeholder="Item name (e.g. FR-900 WL)"
@@ -284,6 +309,27 @@ export default function ItemsPage() {
               fontSize: 12,
             }}
           />
+
+          {/* Company */}
+          <select
+            value={newCompany}
+            onChange={(e) => setNewCompany(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 999,
+              border: "1px solid #333",
+              background: "#050505",
+              color: "#f5f5f5",
+              fontSize: 12,
+            }}
+          >
+            {COMPANY_OPTIONS.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
 
           {/* Category DROPDOWN (from DB) */}
           <select
@@ -307,6 +353,7 @@ export default function ItemsPage() {
             ))}
           </select>
 
+          {/* Dealer rate */}
           <input
             type="text"
             inputMode="numeric"
@@ -326,6 +373,7 @@ export default function ItemsPage() {
             }}
           />
 
+          {/* Unit */}
           <input
             type="text"
             placeholder="Unit"
@@ -371,7 +419,8 @@ export default function ItemsPage() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "26%" }}>Name</th>
+              <th style={{ width: "24%" }}>Name</th>
+              <th>Company</th>
               <th>Category</th>
               <th>Dealer Rate</th>
               <th>Unit</th>
@@ -387,7 +436,7 @@ export default function ItemsPage() {
                   {/* Category subheading row */}
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       style={{
                         padding: "8px 6px",
                         fontSize: 12,
@@ -403,12 +452,48 @@ export default function ItemsPage() {
 
                   {groupItems.map((it) => (
                     <tr key={it.id}>
+                      {/* Name */}
                       <td>{it.name}</td>
+
+                      {/* Company selector */}
+                      <td>
+                        <select
+                          value={it.company || "Tycoon"}
+                          onChange={(e) =>
+                            updateItemField(
+                              it.id,
+                              "company",
+                              e.target.value
+                            )
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            border: "1px solid #333",
+                            background: "#050505",
+                            color: "#f5f5f5",
+                            fontSize: 12,
+                          }}
+                        >
+                          {COMPANY_OPTIONS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Category selector */}
                       <td>
                         <select
                           value={it.category || ""}
                           onChange={(e) =>
-                            updateItemField(it.id, "category", e.target.value)
+                            updateItemField(
+                              it.id,
+                              "category",
+                              e.target.value
+                            )
                           }
                           style={{
                             width: "100%",
@@ -428,6 +513,8 @@ export default function ItemsPage() {
                           ))}
                         </select>
                       </td>
+
+                      {/* Dealer rate */}
                       <td>
                         <input
                           type="text"
@@ -447,7 +534,11 @@ export default function ItemsPage() {
                           }}
                         />
                       </td>
+
+                      {/* Unit */}
                       <td>{it.unit || "pcs"}</td>
+
+                      {/* Active toggle */}
                       <td>
                         <button
                           type="button"
@@ -469,6 +560,8 @@ export default function ItemsPage() {
                           {it.is_active ? "Active" : "Inactive"}
                         </button>
                       </td>
+
+                      {/* Save button */}
                       <td>
                         <button
                           type="button"
@@ -494,7 +587,10 @@ export default function ItemsPage() {
 
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 12 }}>
+                <td
+                  colSpan={7}
+                  style={{ textAlign: "center", padding: 12 }}
+                >
                   No items yet. Add your first item above.
                 </td>
               </tr>
@@ -502,7 +598,10 @@ export default function ItemsPage() {
 
             {loading && (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 12 }}>
+                <td
+                  colSpan={7}
+                  style={{ textAlign: "center", padding: 12 }}
+                >
                   Loading…
                 </td>
               </tr>
