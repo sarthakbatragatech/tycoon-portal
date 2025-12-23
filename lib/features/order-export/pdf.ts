@@ -179,14 +179,12 @@ export async function exportOrderPdf({
 }) {
   const orderCode = order?.order_code || order?.id || "order";
 
-  const partyRaw =
-    order?.party_name ||
-    order?.party ||
-    order?.customer_name ||
-    order?.customer ||
-    order?.stakeholder_name ||
-    order?.stakeholder?.name ||
-    "Unknown Party";
+  const partyRel =
+    order && Array.isArray(order?.parties) && order.parties.length > 0
+      ? order.parties[0]
+      : order?.parties;
+
+  const partyRaw = partyRel?.name || "Unknown Party";
 
   const party = sanitizeFilePart(partyRaw) || "Unknown_Party";
   const code = sanitizeFilePart(orderCode);
