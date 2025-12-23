@@ -5,20 +5,14 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
-type ExportOptions = {
-  elementId: string;
-  filename: string;
-  scale?: number;
+/* ----------------------------- helpers ----------------------------- */
 
-  // Margins (points). 72pt = 1 inch
-  marginLeftPt?: number;
-  marginRightPt?: number;
-  marginTopPt?: number;
-  marginBottomPt?: number;
-
-  // small overlap between pages to avoid "cut" rows
-  overlapPx?: number;
-};
+function sanitizeFilePart(input: any) {
+  return String(input ?? "")
+    .trim()
+    .replace(/\s+/g, "_")           // spaces → _
+    .replace(/[^a-zA-Z0-9_-]/g, ""); // remove unsafe chars
+}
 
 async function waitForImages(container: HTMLElement) {
   const imgs = Array.from(container.querySelectorAll("img")) as HTMLImageElement[];
@@ -35,18 +29,34 @@ async function waitForImages(container: HTMLElement) {
 }
 
 function hideLikelyPageNumbers(root: HTMLElement) {
-  // Hide any DOM text like "Page 1" or "Page 1 of 2" so we can draw correct ones in jsPDF
   const nodes = Array.from(root.querySelectorAll("*")) as HTMLElement[];
   for (const el of nodes) {
     const t = (el.textContent || "").trim();
     if (!t) continue;
-
-    // very targeted patterns
     if (/^page\s*\d+(\s*of\s*\d+)?$/i.test(t)) {
       el.style.display = "none";
     }
   }
 }
+
+/* ----------------------------- types ----------------------------- */
+
+type ExportOptions = {
+  elementId: string;
+  filename: string;
+  scale?: number;
+
+  // Margins (points). 72pt = 1 inch
+  marginLeftPt?: number;
+  marginRightPt?: number;
+  marginTopPt?: number;
+  marginBottomPt?: number;
+
+  // small overlap between pages to avoid "cut" rows
+  overlapPx?: number;
+};
+
+/* ------------------------ core pdf export ------------------------ */
 
 export async function exportElementToPdf({
   elementId,
@@ -55,10 +65,10 @@ export async function exportElementToPdf({
 
   marginLeftPt = 24,
   marginRightPt = 24,
-  marginTopPt = 14, // 👈 smaller top margin (you said top gap is too big)
+  marginTopPt = 14,
   marginBottomPt = 24,
 
-  overlapPx = 18, // 👈 reduces weird cuts at page breaks (small repeated overlap)
+  overlapPx = 18,
 }: ExportOptions) {
   const element = document.getElementById(elementId) as HTMLElement | null;
   if (!element) throw new Error(`Element not found: ${elementId}`);
@@ -74,7 +84,6 @@ export async function exportElementToPdf({
     windowWidth: element.scrollWidth,
     windowHeight: element.scrollHeight,
 
-    // ✅ Fix blank capture when node is opacity:0 / offscreen
     onclone: (doc) => {
       const cloned = doc.getElementById(elementId) as HTMLElement | null;
       if (!cloned) return;
@@ -89,15 +98,12 @@ export async function exportElementToPdf({
       cloned.style.zIndex = "9999";
       cloned.style.background = "#ffffff";
 
-      // remove/filter oddities
       const all = Array.from(cloned.querySelectorAll("*")) as HTMLElement[];
       all.forEach((el) => {
         const style = (el as any).style;
-        if (!style) return;
-        if (style.filter) style.filter = "none";
+        if (style?.filter) style.filter = "none";
       });
 
-      // hide existing "Page 1" text inside the export HTML
       hideLikelyPageNumbers(cloned);
     },
   });
@@ -109,17 +115,12 @@ export async function exportElementToPdf({
   const usableWidth = pageWidth - marginLeftPt - marginRightPt;
   const usableHeight = pageHeight - marginTopPt - marginBottomPt;
 
-  // Convert "usableHeight in PDF pts" -> "slice height in canvas px"
-  // because we scale canvas width to usableWidth.
   const pxPerPt = canvas.width / usableWidth;
   const sliceHeightPx = Math.floor(usableHeight * pxPerPt);
-
-  // Step with overlap (overlap only after first page)
   const stepPx = Math.max(1, sliceHeightPx - Math.max(0, overlapPx));
 
   const totalPages = Math.max(1, Math.ceil((canvas.height - overlapPx) / stepPx));
 
-  // Create each page as its own image so margins always apply
   for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
     if (pageIndex > 0) pdf.addPage();
 
@@ -133,11 +134,9 @@ export async function exportElementToPdf({
     const ctx = pageCanvas.getContext("2d");
     if (!ctx) continue;
 
-    // White background
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
 
-    // Draw slice
     ctx.drawImage(
       canvas,
       0,
@@ -151,23 +150,26 @@ export async function exportElementToPdf({
     );
 
     const imgData = pageCanvas.toDataURL("image/png");
-
     const imgW = usableWidth;
     const imgH = currentSlicePx / pxPerPt;
 
     pdf.addImage(imgData, "PNG", marginLeftPt, marginTopPt, imgW, imgH);
 
-    // Page number (bottom-right)
     pdf.setFontSize(9);
     pdf.setTextColor(120);
-    const label = `Page ${pageIndex + 1} of ${totalPages}`;
-    pdf.text(label, pageWidth - marginRightPt, pageHeight - 10, { align: "right" });
+    pdf.text(
+      `Page ${pageIndex + 1} of ${totalPages}`,
+      pageWidth - marginRightPt,
+      pageHeight - 10,
+      { align: "right" }
+    );
   }
 
   pdf.save(filename);
 }
 
-/* ✅ THIS IS WHAT OrderDetailClient IMPORTS */
+/* ----------------------- order-specific export ----------------------- */
+
 export async function exportOrderPdf({
   order,
   elementId,
@@ -175,16 +177,27 @@ export async function exportOrderPdf({
   order: any;
   elementId: string;
 }) {
-  const code = order?.order_code || order?.id || "order";
+  const orderCode = order?.order_code || order?.id || "order";
+
+  const partyRaw =
+    order?.party_name ||
+    order?.party ||
+    order?.customer_name ||
+    order?.customer ||
+    order?.stakeholder_name ||
+    order?.stakeholder?.name ||
+    "Unknown Party";
+
+  const party = sanitizeFilePart(partyRaw) || "Unknown_Party";
+  const code = sanitizeFilePart(orderCode);
+
   await exportElementToPdf({
     elementId,
-    filename: `${code}.pdf`,
+    filename: `${party}_${code}.pdf`,
     scale: 2,
-
-    // margins tuned for your screenshots
     marginLeftPt: 24,
     marginRightPt: 24,
-    marginTopPt: 12, // smaller top gap
+    marginTopPt: 12,
     marginBottomPt: 22,
     overlapPx: 18,
   });
