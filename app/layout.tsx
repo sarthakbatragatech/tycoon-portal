@@ -48,6 +48,10 @@ export default function RootLayout({
                   <span>View Orders</span>
                   <span className="nav-item-dot" />
                 </Link>
+                <Link href="/sales" className="nav-item">
+                  <span>Sales</span>
+                  <span className="nav-item-dot" />
+                </Link>
               </div>
             </div>
 
