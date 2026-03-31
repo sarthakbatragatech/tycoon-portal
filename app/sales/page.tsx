@@ -97,6 +97,40 @@ function safeFirst(rel: any) {
   return rel;
 }
 
+function clampDispatchedQty(ordered: any, raw: any) {
+  const orderedNum = Number(ordered ?? 0);
+  let dispatched = Number(raw ?? 0);
+  if (Number.isNaN(dispatched) || dispatched < 0) dispatched = 0;
+  if (!Number.isNaN(orderedNum) && dispatched > orderedNum) dispatched = orderedNum;
+  return dispatched;
+}
+
+function isTycoonSalesItem(item: any) {
+  return (item?.company || "") === "Tycoon" && !isSpareCategory(item?.category || "");
+}
+
+const QUERY_PAGE_SIZE = 1000;
+
+async function fetchAllRows<T>(loadPage: (from: number, to: number) => Promise<{ data: T[] | null; error: any }>) {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + QUERY_PAGE_SIZE - 1;
+    const { data, error } = await loadPage(from, to);
+
+    if (error) return { data: null, error };
+
+    const page = data || [];
+    rows.push(...page);
+
+    if (page.length < QUERY_PAGE_SIZE) break;
+    from += QUERY_PAGE_SIZE;
+  }
+
+  return { data: rows, error: null };
+}
+
 function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
   const csv =
     header.join(",") +
@@ -281,36 +315,75 @@ export default function SalesPage() {
     setPartyAggLoading(true);
     setPartyAggError(null);
 
-    let q = supabase
-      .from("dispatch_events")
-      .select(
-        `
-        id,
-        dispatched_at,
-        dispatched_qty,
-        order_lines:order_line_id (
-          order_id,
-          dealer_rate_at_order,
-          items (
-            company,
-            category
-          ),
-          orders:order_id (
+    const isAllTime = !dispatchFrom && !dispatchTo;
+    let data: any[] | null = null;
+    let error: any = null;
+
+    if (isAllTime) {
+      const result = await fetchAllRows<any>((from, to) =>
+        supabase
+          .from("orders")
+          .select(
+            `
+            id,
             party_id,
             parties:party_id (
               id,
               name
+            ),
+            order_lines (
+              qty,
+              dispatched_qty,
+              dealer_rate_at_order,
+              items (
+                company,
+                category
+              )
             )
+          `
           )
-        )
-      `
+          .range(from, to)
       );
 
-    // All time FIX: apply filters ONLY if user set them
-    if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
-    if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+      data = result.data;
+      error = result.error;
+    } else {
+      const result = await fetchAllRows<any>((from, to) => {
+        let q = supabase
+          .from("dispatch_events")
+          .select(
+            `
+            id,
+            dispatched_at,
+            dispatched_qty,
+            order_lines:order_line_id (
+              order_id,
+              dealer_rate_at_order,
+              items (
+                company,
+                category
+              ),
+              orders:order_id (
+                party_id,
+                parties:party_id (
+                  id,
+                  name
+                )
+              )
+            )
+          `
+          )
+          .range(from, to);
 
-    const { data, error } = await q;
+        if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
+        if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+
+        return q;
+      });
+
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) {
       console.error("Error loading party agg", error);
@@ -325,35 +398,61 @@ export default function SalesPage() {
       { party_name: string; qty: number; value: number; orders: Set<string> }
     >();
 
-    (data || []).forEach((row: any) => {
-      const dqty = Number(row?.dispatched_qty ?? 0);
-      if (!dqty || dqty <= 0) return;
+    if (isAllTime) {
+      (data || []).forEach((order: any) => {
+        const party = safeFirst(order?.parties);
+        const party_id = party?.id || order?.party_id;
+        const party_name = party?.name || "Unknown party";
+        if (!party_id) return;
 
-      const line = row?.order_lines;
-      const item = safeFirst(line?.items);
-      if ((item?.company || "") !== "Tycoon") return;
+        (order?.order_lines || []).forEach((line: any) => {
+          const item = safeFirst(line?.items);
+          if (!isTycoonSalesItem(item)) return;
 
-      const cat = item?.category || "";
-      if (isSpareCategory(cat)) return;
+          const dqty = clampDispatchedQty(line?.qty, line?.dispatched_qty);
+          if (!dqty || dqty <= 0) return;
 
-      const ord = safeFirst(line?.orders);
-      const party = safeFirst(ord?.parties);
-      const party_id = party?.id || ord?.party_id;
-      const party_name = party?.name || "Unknown party";
-      if (!party_id) return;
+          const rate = Number(line?.dealer_rate_at_order ?? 0);
+          const val = dqty * rate;
 
-      const rate = Number(line?.dealer_rate_at_order ?? 0);
-      const val = dqty * rate;
+          if (!byParty.has(party_id)) {
+            byParty.set(party_id, { party_name, qty: 0, value: 0, orders: new Set<string>() });
+          }
 
-      if (!byParty.has(party_id)) {
-        byParty.set(party_id, { party_name, qty: 0, value: 0, orders: new Set<string>() });
-      }
+          const agg = byParty.get(party_id)!;
+          agg.qty += dqty;
+          agg.value += val;
+          if (order?.id) agg.orders.add(order.id);
+        });
+      });
+    } else {
+      (data || []).forEach((row: any) => {
+        const dqty = Number(row?.dispatched_qty ?? 0);
+        if (!dqty || dqty <= 0) return;
 
-      const agg = byParty.get(party_id)!;
-      agg.qty += dqty;
-      agg.value += val;
-      if (line?.order_id) agg.orders.add(line.order_id);
-    });
+        const line = row?.order_lines;
+        const item = safeFirst(line?.items);
+        if (!isTycoonSalesItem(item)) return;
+
+        const ord = safeFirst(line?.orders);
+        const party = safeFirst(ord?.parties);
+        const party_id = party?.id || ord?.party_id;
+        const party_name = party?.name || "Unknown party";
+        if (!party_id) return;
+
+        const rate = Number(line?.dealer_rate_at_order ?? 0);
+        const val = dqty * rate;
+
+        if (!byParty.has(party_id)) {
+          byParty.set(party_id, { party_name, qty: 0, value: 0, orders: new Set<string>() });
+        }
+
+        const agg = byParty.get(party_id)!;
+        agg.qty += dqty;
+        agg.value += val;
+        if (line?.order_id) agg.orders.add(line.order_id);
+      });
+    }
 
     const rows: PartyAgg[] = Array.from(byParty.entries())
       .map(([party_id, agg]) => ({
@@ -390,35 +489,71 @@ export default function SalesPage() {
     setPartyDetailLoading(true);
     setPartyDetailError(null);
 
-    let q = supabase
-      .from("dispatch_events")
-      .select(
-        `
-        id,
-        dispatched_at,
-        dispatched_qty,
-        order_lines:order_line_id (
-          order_id,
-          qty,
-          dispatched_qty,
-          dealer_rate_at_order,
-          items (
-            name,
-            category,
-            company
-          ),
-          orders:order_id (
-            party_id
+    const isAllTime = !dispatchFrom && !dispatchTo;
+    let data: any[] | null = null;
+    let error: any = null;
+
+    if (isAllTime) {
+      const result = await fetchAllRows<any>((from, to) =>
+        supabase
+          .from("orders")
+          .select(
+            `
+            id,
+            order_lines (
+              qty,
+              dispatched_qty,
+              dealer_rate_at_order,
+              items (
+                name,
+                category,
+                company
+              )
+            )
+          `
           )
-        )
-      `
+          .eq("party_id", selectedPartyId)
+          .range(from, to)
       );
 
-    // All time FIX
-    if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
-    if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+      data = result.data;
+      error = result.error;
+    } else {
+      const result = await fetchAllRows<any>((from, to) => {
+        let q = supabase
+          .from("dispatch_events")
+          .select(
+            `
+            id,
+            dispatched_at,
+            dispatched_qty,
+            order_lines:order_line_id (
+              order_id,
+              qty,
+              dispatched_qty,
+              dealer_rate_at_order,
+              items (
+                name,
+                category,
+                company
+              ),
+              orders:order_id (
+                party_id
+              )
+            )
+          `
+          )
+          .range(from, to);
 
-    const { data, error } = await q;
+        if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
+        if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+
+        return q;
+      });
+
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) {
       console.error("Error loading party detail", error);
@@ -437,61 +572,100 @@ export default function SalesPage() {
     // Fulfilment % across served orders (to-date dispatched / ordered)
     const orderQtySum = new Map<string, { ordered: number; dispatched: number }>();
 
-    (data || []).forEach((row: any) => {
-      const dqty = Number(row?.dispatched_qty ?? 0);
-      if (!dqty || dqty <= 0) return;
+    if (isAllTime) {
+      (data || []).forEach((order: any) => {
+        const oid = order?.id;
 
-      const line = row?.order_lines;
-      const ord = safeFirst(line?.orders);
-      if ((ord?.party_id || "") !== selectedPartyId) return;
+        (order?.order_lines || []).forEach((line: any) => {
+          const item = safeFirst(line?.items);
+          if (!isTycoonSalesItem(item)) return;
 
-      const item = safeFirst(line?.items);
-      if ((item?.company || "") !== "Tycoon") return;
+          const category = (item?.category || "").trim();
+          const dqty = clampDispatchedQty(line?.qty, line?.dispatched_qty);
+          if (!dqty || dqty <= 0) return;
 
-      const category = (item?.category || "").trim();
-      if (isSpareCategory(category)) return;
+          const itemName = (item?.name || "Unknown item").trim();
+          const rate = Number(line?.dealer_rate_at_order ?? 0);
+          const v = dqty * rate;
 
-      const itemName = (item?.name || "Unknown item").trim();
-      const rate = Number(line?.dealer_rate_at_order ?? 0);
-      const v = dqty * rate;
+          qty += dqty;
+          value += v;
+          if (oid) orderSet.add(oid);
 
-      qty += dqty;
-      value += v;
-      if (line?.order_id) orderSet.add(line.order_id);
+          if (!isUncategorised(category)) {
+            if (!byCategory.has(category)) byCategory.set(category, { value: 0, qty: 0 });
+            const c = byCategory.get(category)!;
+            c.value += v;
+            c.qty += dqty;
+          }
 
-      // Pie excludes uncategorised
-      if (!isUncategorised(category)) {
-        if (!byCategory.has(category)) byCategory.set(category, { value: 0, qty: 0 });
-        const c = byCategory.get(category)!;
-        c.value += v;
-        c.qty += dqty;
-      }
+          const catForItem = category && category.trim() !== "" ? category : "Uncategorised";
+          if (!byItem.has(itemName)) {
+            byItem.set(itemName, { category: catForItem, qty: 0, value: 0, orders: new Set<string>() });
+          }
+          const it = byItem.get(itemName)!;
+          it.qty += dqty;
+          it.value += v;
+          if (oid) it.orders.add(oid);
 
-      // Item table includes uncategorised (still excluding spares)
-      const catForItem = category && category.trim() !== "" ? category : "Uncategorised";
-      if (!byItem.has(itemName)) {
-        byItem.set(itemName, { category: catForItem, qty: 0, value: 0, orders: new Set<string>() });
-      }
-      const it = byItem.get(itemName)!;
-      it.qty += dqty;
-      it.value += v;
-      if (line?.order_id) it.orders.add(line.order_id);
+          if (oid) {
+            const orderedQty = Number(line?.qty ?? 0);
+            if (!orderQtySum.has(oid)) orderQtySum.set(oid, { ordered: 0, dispatched: 0 });
+            const o = orderQtySum.get(oid)!;
+            o.ordered += orderedQty;
+            o.dispatched += dqty;
+          }
+        });
+      });
+    } else {
+      (data || []).forEach((row: any) => {
+        const dqty = Number(row?.dispatched_qty ?? 0);
+        if (!dqty || dqty <= 0) return;
 
-      // fulfilment calc (served orders)
-      const oid = line?.order_id;
-      if (oid) {
-        const orderedQty = Number(line?.qty ?? 0);
-        const raw = line?.dispatched_qty === "" || line?.dispatched_qty == null ? 0 : Number(line?.dispatched_qty);
-        let dispatchedQty = Number.isNaN(raw) ? 0 : raw;
-        if (dispatchedQty < 0) dispatchedQty = 0;
-        if (dispatchedQty > orderedQty) dispatchedQty = orderedQty;
+        const line = row?.order_lines;
+        const ord = safeFirst(line?.orders);
+        if ((ord?.party_id || "") !== selectedPartyId) return;
 
-        if (!orderQtySum.has(oid)) orderQtySum.set(oid, { ordered: 0, dispatched: 0 });
-        const o = orderQtySum.get(oid)!;
-        o.ordered += orderedQty;
-        o.dispatched += dispatchedQty;
-      }
-    });
+        const item = safeFirst(line?.items);
+        if (!isTycoonSalesItem(item)) return;
+
+        const category = (item?.category || "").trim();
+        const itemName = (item?.name || "Unknown item").trim();
+        const rate = Number(line?.dealer_rate_at_order ?? 0);
+        const v = dqty * rate;
+
+        qty += dqty;
+        value += v;
+        if (line?.order_id) orderSet.add(line.order_id);
+
+        if (!isUncategorised(category)) {
+          if (!byCategory.has(category)) byCategory.set(category, { value: 0, qty: 0 });
+          const c = byCategory.get(category)!;
+          c.value += v;
+          c.qty += dqty;
+        }
+
+        const catForItem = category && category.trim() !== "" ? category : "Uncategorised";
+        if (!byItem.has(itemName)) {
+          byItem.set(itemName, { category: catForItem, qty: 0, value: 0, orders: new Set<string>() });
+        }
+        const it = byItem.get(itemName)!;
+        it.qty += dqty;
+        it.value += v;
+        if (line?.order_id) it.orders.add(line.order_id);
+
+        const oid = line?.order_id;
+        if (oid) {
+          const orderedQty = Number(line?.qty ?? 0);
+          const dispatchedQty = clampDispatchedQty(line?.qty, line?.dispatched_qty);
+
+          if (!orderQtySum.has(oid)) orderQtySum.set(oid, { ordered: 0, dispatched: 0 });
+          const o = orderQtySum.get(oid)!;
+          o.ordered += orderedQty;
+          o.dispatched += dispatchedQty;
+        }
+      });
+    }
 
     const slices: CategorySlice[] = Array.from(byCategory.entries())
       .map(([category, agg]) => ({ category, value: agg.value, qty: agg.qty }))
@@ -754,6 +928,12 @@ export default function SalesPage() {
             Range: <b style={{ opacity: 0.9 }}>{rangeLabel}</b>
           </span>
         </div>
+
+        {!dispatchFrom && !dispatchTo && (
+          <div style={{ fontSize: 11, opacity: 0.68 }}>
+            All time uses current dispatched quantities from orders, so older shipped lines still count even if they do not have dated dispatch events.
+          </div>
+        )}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
           <span style={{ opacity: 0.8 }}>Filter by dispatch date:</span>
