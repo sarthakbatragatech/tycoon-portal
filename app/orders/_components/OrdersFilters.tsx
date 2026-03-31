@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import useThemeMode from "@/app/_components/useThemeMode";
 import { STATUS_OPTIONS } from "@/lib/constants/status";
 
 type Props = {
@@ -22,8 +23,50 @@ export default function OrdersFilters({
   setHideDispatched,
   onClear,
 }: Props) {
+  const themeMode = useThemeMode();
   const showClear =
     statusFilter !== "all" || fulfilmentFilter !== "all" || hideDispatched;
+
+  const uiTheme =
+    themeMode === "light"
+      ? {
+          input: {
+            padding: "4px 8px",
+            borderRadius: 999,
+            border: "1px solid var(--input-border)",
+            background: "var(--surface-plain)",
+            color: "var(--text-primary)",
+            fontSize: 11,
+          },
+          ghostButton: {
+            padding: "4px 10px",
+            borderRadius: 999,
+            border: "1px solid var(--input-border)",
+            background: "transparent",
+            color: "var(--text-primary)",
+            fontSize: 11,
+          },
+          labelColor: "var(--text-primary)",
+        }
+      : {
+          input: {
+            padding: "4px 8px",
+            borderRadius: 999,
+            border: "1px solid var(--input-border)",
+            background: "var(--surface-plain)",
+            color: "var(--text-primary)",
+            fontSize: 11,
+          },
+          ghostButton: {
+            padding: "4px 10px",
+            borderRadius: 999,
+            border: "1px solid var(--input-border)",
+            background: "transparent",
+            color: "var(--text-primary)",
+            fontSize: 11,
+          },
+          labelColor: "var(--text-primary)",
+        };
 
   return (
     <div
@@ -44,14 +87,7 @@ export default function OrdersFilters({
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          style={{
-            padding: "4px 8px",
-            borderRadius: 999,
-            border: "1px solid #333",
-            background: "#050505",
-            color: "#f5f5f5",
-            fontSize: 11,
-          }}
+          style={uiTheme.input}
         >
           <option value="all">All</option>
           {STATUS_OPTIONS.map((opt) => (
@@ -68,14 +104,7 @@ export default function OrdersFilters({
         <select
           value={fulfilmentFilter}
           onChange={(e) => setFulfilmentFilter(e.target.value)}
-          style={{
-            padding: "4px 8px",
-            borderRadius: 999,
-            border: "1px solid #333",
-            background: "#050505",
-            color: "#f5f5f5",
-            fontSize: 11,
-          }}
+          style={uiTheme.input}
         >
           <option value="all">All</option>
           <option value="low">&lt; 40%</option>
@@ -93,7 +122,7 @@ export default function OrdersFilters({
             alignItems: "center",
             gap: 6,
             cursor: "pointer",
-            color: "#e5e7eb",
+            color: uiTheme.labelColor,
           }}
         >
           <input
@@ -104,8 +133,8 @@ export default function OrdersFilters({
               width: 14,
               height: 14,
               borderRadius: 3,
-              border: "1px solid #4b5563",
-              background: "#050505",
+              border: "1px solid var(--input-border)",
+              background: "var(--surface-plain)",
               accentColor: "#f97316",
             }}
           />
@@ -117,14 +146,7 @@ export default function OrdersFilters({
         <button
           type="button"
           onClick={onClear}
-          style={{
-            padding: "4px 10px",
-            borderRadius: 999,
-            border: "1px solid #333",
-            background: "transparent",
-            color: "#f5f5f5",
-            fontSize: 11,
-          }}
+          style={uiTheme.ghostButton}
         >
           Clear filters
         </button>

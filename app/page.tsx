@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
 
 // ---------- INLINE VEGA-LITE CHART COMPONENT ----------
@@ -100,9 +101,30 @@ function SalesChartCard({
   dispatchFrom: string;
   dispatchTo: string;
 }) {
+  const themeMode = useThemeMode();
   const [data, setData] = useState<SalesPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const chartTheme = useMemo(
+    () =>
+      themeMode === "light"
+        ? {
+            axisLabel: "#4f4f4f",
+            axisStrong: "#1f1f1f",
+            grid: "#ddd6ca",
+            line: "#cfc6b8",
+            trend: "#4f46e5",
+          }
+        : {
+            axisLabel: "#cfcfcf",
+            axisStrong: "#e5e5e5",
+            grid: "#1f1f1f",
+            line: "#262626",
+            trend: "#f5f5f5",
+          },
+    [themeMode]
+  );
 
   useEffect(() => {
     loadSales();
@@ -215,12 +237,12 @@ function SalesChartCard({
         title: null,
         axis: {
           format: "%d %b",
-          labelColor: "#cfcfcf",
-          titleColor: "#cfcfcf",
+          labelColor: chartTheme.axisLabel,
+          titleColor: chartTheme.axisLabel,
           labelAngle: 0,
           labelPadding: 10,
-          tickColor: "#262626",
-          domainColor: "#262626",
+          tickColor: chartTheme.line,
+          domainColor: chartTheme.line,
           grid: false,
         },
       },
@@ -239,12 +261,12 @@ function SalesChartCard({
             type: "quantitative",
             title: "₹ Sales",
             axis: {
-              labelColor: "#cfcfcf",
-              titleColor: "#cfcfcf",
-              tickColor: "#262626",
-              domainColor: "#262626",
+              labelColor: chartTheme.axisLabel,
+              titleColor: chartTheme.axisLabel,
+              tickColor: chartTheme.line,
+              domainColor: chartTheme.line,
               grid: true,
-              gridColor: "#1f1f1f",
+              gridColor: chartTheme.grid,
               gridOpacity: 1,
               tickCount: 5,
             },
@@ -271,15 +293,15 @@ function SalesChartCard({
             title: "Pcs",
             axis: {
               orient: "right",
-              labelColor: "#cfcfcf",
-              titleColor: "#cfcfcf",
-              tickColor: "#262626",
-              domainColor: "#262626",
+              labelColor: chartTheme.axisLabel,
+              titleColor: chartTheme.axisLabel,
+              tickColor: chartTheme.line,
+              domainColor: chartTheme.line,
               grid: false,
               tickCount: 5,
             },
           },
-          color: { value: "#f5f5f5" },
+          color: { value: chartTheme.trend },
         },
       },
     ],
@@ -288,8 +310,8 @@ function SalesChartCard({
 
     config: {
       view: { stroke: "transparent" },
-      legend: { labelColor: "#cfcfcf", titleColor: "#cfcfcf" },
-      text: { color: "#e5e5e5" },
+      legend: { labelColor: chartTheme.axisLabel, titleColor: chartTheme.axisLabel },
+      text: { color: chartTheme.axisStrong },
     },
   };
 
@@ -357,6 +379,7 @@ const PRODUCTION_ACTIVE_STATUSES = [
 // ---------- DASHBOARD PAGE ----------
 
 export default function DashboardPage() {
+  const themeMode = useThemeMode();
   const [orders, setOrders] = useState<OrderWithLines[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -403,6 +426,76 @@ export default function DashboardPage() {
     "value"
   );
   const [salesCatShowAll, setSalesCatShowAll] = useState(false);
+
+  const uiTheme = useMemo(
+    () =>
+      themeMode === "light"
+        ? {
+            chartLabel: "#4f4f4f",
+            chartStrong: "#1f1f1f",
+            chartGrid: "#ddd6ca",
+            chartLine: "#cfc6b8",
+            demandRange: ["#303030", "rgba(48,48,48,0.22)"],
+            categoryRange: ["rgba(168,85,247,0.28)", "#7c3aed"],
+            ghostButton: {
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "transparent",
+              color: "var(--text-primary)",
+              fontSize: 11,
+            },
+            activeButton: {
+              border: "1px solid var(--text-primary)",
+              background: "var(--text-primary)",
+              color: "var(--nav-active-text)",
+            },
+            inputPill: {
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "var(--surface-plain)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            },
+            progressBg: "#f1ece3",
+            progressBorder: "1px solid #d9d1c5",
+            mutedText: "#555",
+          }
+        : {
+            chartLabel: "#e5e5e5",
+            chartStrong: "#e5e5e5",
+            chartGrid: "#262626",
+            chartLine: "#262626",
+            demandRange: ["#f5f5f5", "rgba(245,245,245,0.35)"],
+            categoryRange: ["rgba(168,85,247,0.35)", "#a855f7"],
+            ghostButton: {
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "transparent",
+              color: "var(--text-primary)",
+              fontSize: 11,
+            },
+            activeButton: {
+              border: "1px solid var(--text-primary)",
+              background: "var(--text-primary)",
+              color: "var(--nav-active-text)",
+            },
+            inputPill: {
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "var(--surface-plain)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            },
+            progressBg: "#050505",
+            progressBorder: "1px solid #222",
+            mutedText: "#ddd",
+          },
+    [themeMode]
+  );
 
   useEffect(() => {
     loadData();
@@ -1165,12 +1258,12 @@ export default function DashboardPage() {
           type: "nominal",
           scale: {
             domain: ["Dispatched", "Pending"],
-            range: ["#f5f5f5", "rgba(245,245,245,0.35)"],
+            range: uiTheme.demandRange,
           },
           legend: {
             title: null,
             orient: "top",
-            labelColor: "#e5e5e5",
+            labelColor: uiTheme.chartStrong,
           },
         },
         tooltip: [
@@ -1183,13 +1276,13 @@ export default function DashboardPage() {
       config: {
         view: { stroke: "transparent" },
         axis: {
-          labelColor: "#e5e5e5",
-          titleColor: "#e5e5e5",
-          gridColor: "#262626",
+          labelColor: uiTheme.chartStrong,
+          titleColor: uiTheme.chartStrong,
+          gridColor: uiTheme.chartGrid,
         },
       },
     };
-  }, [itemDemandArray]);
+  }, [itemDemandArray, uiTheme]);
 
   // --- Category demand stacked (all companies) ---
   const categoryDemandSpec = useMemo(() => {
@@ -1237,12 +1330,12 @@ export default function DashboardPage() {
           type: "nominal",
         scale: {
           domain: ["Pending", "Dispatched"],
-          range: ["rgba(168,85,247,0.35)", "#a855f7"],
+          range: uiTheme.categoryRange,
         },
           legend: {
             title: null,
             orient: "top",
-            labelColor: "#e5e5e5",
+            labelColor: uiTheme.chartStrong,
           },
         },
         tooltip: [
@@ -1255,13 +1348,13 @@ export default function DashboardPage() {
       config: {
         view: { stroke: "transparent" },
         axis: {
-          labelColor: "#e5e5e5",
-          titleColor: "#e5e5e5",
-          gridColor: "#262626",
+          labelColor: uiTheme.chartStrong,
+          titleColor: uiTheme.chartStrong,
+          gridColor: uiTheme.chartGrid,
         },
       },
     };
-  }, [categoryDemandArray]);
+  }, [categoryDemandArray, uiTheme]);
 
   const pendingItemsSpec = useMemo(
     () => ({
@@ -1283,10 +1376,14 @@ export default function DashboardPage() {
       },
       config: {
         view: { stroke: "transparent" },
-        axis: { labelColor: "#e5e5e5", titleColor: "#e5e5e5", gridColor: "#262626" },
+        axis: {
+          labelColor: uiTheme.chartStrong,
+          titleColor: uiTheme.chartStrong,
+          gridColor: uiTheme.chartGrid,
+        },
       },
     }),
-    [itemPendingArray]
+    [itemPendingArray, uiTheme]
   );
 
   const fulfillmentBands = useMemo(() => {
@@ -1329,10 +1426,14 @@ export default function DashboardPage() {
       },
       config: {
         view: { stroke: "transparent" },
-        axis: { labelColor: "#e5e5e5", titleColor: "#e5e5e5", gridColor: "#262626" },
+        axis: {
+          labelColor: uiTheme.chartStrong,
+          titleColor: uiTheme.chartStrong,
+          gridColor: uiTheme.chartGrid,
+        },
       },
     }),
-    [fulfillmentBands]
+    [fulfillmentBands, uiTheme]
   );
 
   const hasDemandData = totalOrders > 0;
@@ -1362,22 +1463,22 @@ export default function DashboardPage() {
           <span style={{ opacity: 0.8 }}>Quick range (dispatch):</span>
 
           <button type="button" onClick={() => setQuickRangeDispatch("all")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             All time
           </button>
 
           <button type="button" onClick={() => setQuickRangeDispatch("thisMonth")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             This month
           </button>
 
           <button type="button" onClick={() => setQuickRangeDispatch("lastMonth")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             Last month
           </button>
 
           <button type="button" onClick={() => setQuickRangeDispatch("last90")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             Last 90 days
           </button>
         </div>
@@ -1388,24 +1489,24 @@ export default function DashboardPage() {
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ opacity: 0.7 }}>From</span>
             <input type="date" value={dispatchFrom} onChange={(e) => setDispatchFrom(e.target.value)}
-              style={{ padding: "4px 8px", borderRadius: 999, border: "1px solid #333", background: "#050505", color: "#f5f5f5", fontSize: 12 }} />
+              style={uiTheme.inputPill} />
           </div>
 
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ opacity: 0.7 }}>To</span>
             <input type="date" value={dispatchTo} onChange={(e) => setDispatchTo(e.target.value)}
-              style={{ padding: "4px 8px", borderRadius: 999, border: "1px solid #333", background: "#050505", color: "#f5f5f5", fontSize: 12 }} />
+              style={uiTheme.inputPill} />
           </div>
 
           {(dispatchFrom || dispatchTo) && (
             <button type="button" onClick={() => { setDispatchFrom(""); setDispatchTo(""); }}
-              style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+              style={uiTheme.ghostButton}>
               Clear filter
             </button>
           )}
 
           <button type="button" onClick={() => { setOrderFrom(dispatchFrom); setOrderTo(dispatchTo); }}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             Copy to demand range
           </button>
         </div>
@@ -1476,13 +1577,9 @@ export default function DashboardPage() {
                       key={opt.key}
                       type="button"
                       onClick={() => setSalesCatSortBy(opt.key as any)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 999,
-                        border: "1px solid #333",
-                        background: active ? "#f5f5f5" : "transparent",
-                        color: active ? "#000" : "#f5f5f5",
-                        fontSize: 11,
+                        style={{
+                        ...uiTheme.ghostButton,
+                        ...(active ? uiTheme.activeButton : {}),
                       }}
                     >
                       {opt.label}
@@ -1494,12 +1591,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setSalesCatShowAll((v) => !v)}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #333",
-                    background: "transparent",
-                    color: "#f5f5f5",
-                    fontSize: 11,
+                    ...uiTheme.ghostButton,
                   }}
                 >
                   {salesCatShowAll ? "Show top" : "Show all"}
@@ -1509,12 +1601,8 @@ export default function DashboardPage() {
                   type="button"
                   onClick={downloadSalesCategoriesCsv}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: "#f5f5f5",
-                    color: "#000",
-                    fontSize: 11,
+                    ...uiTheme.ghostButton,
+                    ...uiTheme.activeButton,
                   }}
                 >
                   Download CSV
@@ -1572,13 +1660,9 @@ export default function DashboardPage() {
                       key={opt.key}
                       type="button"
                       onClick={() => setSalesItemSortBy(opt.key as any)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 999,
-                        border: "1px solid #333",
-                        background: active ? "#f5f5f5" : "transparent",
-                        color: active ? "#000" : "#f5f5f5",
-                        fontSize: 11,
+                        style={{
+                        ...uiTheme.ghostButton,
+                        ...(active ? uiTheme.activeButton : {}),
                       }}
                     >
                       {opt.label}
@@ -1590,12 +1674,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setSalesItemShowAll((v) => !v)}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #333",
-                    background: "transparent",
-                    color: "#f5f5f5",
-                    fontSize: 11,
+                    ...uiTheme.ghostButton,
                   }}
                 >
                   {salesItemShowAll ? "Show top" : "Show all"}
@@ -1605,12 +1684,8 @@ export default function DashboardPage() {
                   type="button"
                   onClick={downloadSalesItemsCsv}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: "#f5f5f5",
-                    color: "#000",
-                    fontSize: 11,
+                    ...uiTheme.ghostButton,
+                    ...uiTheme.activeButton,
                   }}
                 >
                   Download CSV
@@ -1673,22 +1748,22 @@ export default function DashboardPage() {
           <span style={{ opacity: 0.8 }}>Quick range (order):</span>
 
           <button type="button" onClick={() => setQuickRangeOrder("all")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             All time
           </button>
 
           <button type="button" onClick={() => setQuickRangeOrder("thisMonth")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             This month
           </button>
 
           <button type="button" onClick={() => setQuickRangeOrder("lastMonth")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             Last month
           </button>
 
           <button type="button" onClick={() => setQuickRangeOrder("last90")}
-            style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+            style={uiTheme.ghostButton}>
             Last 90 days
           </button>
         </div>
@@ -1699,18 +1774,18 @@ export default function DashboardPage() {
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ opacity: 0.7 }}>From</span>
             <input type="date" value={orderFrom} onChange={(e) => setOrderFrom(e.target.value)}
-              style={{ padding: "4px 8px", borderRadius: 999, border: "1px solid #333", background: "#050505", color: "#f5f5f5", fontSize: 12 }} />
+              style={uiTheme.inputPill} />
           </div>
 
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ opacity: 0.7 }}>To</span>
             <input type="date" value={orderTo} onChange={(e) => setOrderTo(e.target.value)}
-              style={{ padding: "4px 8px", borderRadius: 999, border: "1px solid #333", background: "#050505", color: "#f5f5f5", fontSize: 12 }} />
+              style={uiTheme.inputPill} />
           </div>
 
           {(orderFrom || orderTo) && (
             <button type="button" onClick={() => { setOrderFrom(""); setOrderTo(""); }}
-              style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #333", background: "transparent", color: "#f5f5f5", fontSize: 11 }}>
+              style={uiTheme.ghostButton}>
               Clear filter
             </button>
           )}
@@ -1747,7 +1822,7 @@ export default function DashboardPage() {
       {!hasDemandData && !loading && (
         <div className="card">
           <div className="card-label">No demand data in this order-date range</div>
-          <div style={{ fontSize: 13, color: "#ddd" }}>
+          <div style={{ fontSize: 13, color: uiTheme.mutedText }}>
             Try expanding the order date range or punching some orders.
           </div>
         </div>
@@ -1829,12 +1904,8 @@ export default function DashboardPage() {
                         type="button"
                         onClick={() => setBacklogSortBy(opt.key as any)}
                         style={{
-                          padding: "4px 10px",
-                          borderRadius: 999,
-                          border: "1px solid #333",
-                          background: active ? "#f5f5f5" : "transparent",
-                          color: active ? "#000" : "#f5f5f5",
-                          fontSize: 11,
+                          ...uiTheme.ghostButton,
+                          ...(active ? uiTheme.activeButton : {}),
                         }}
                       >
                         {opt.label}
@@ -1849,12 +1920,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setBacklogShowAll((v) => !v)}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #333",
-                    background: "transparent",
-                    color: "#f5f5f5",
-                    fontSize: 11,
+                    ...uiTheme.ghostButton,
                   }}
                 >
                   {backlogShowAll ? "Show top 8" : "Show all items"}
@@ -1864,12 +1930,8 @@ export default function DashboardPage() {
                   type="button"
                   onClick={downloadBacklogCsv}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: "#f5f5f5",
-                    color: "#000",
-                    fontSize: 11,
+                    ...uiTheme.ghostButton,
+                    ...uiTheme.activeButton,
                   }}
                 >
                   Download CSV
@@ -1900,6 +1962,18 @@ export default function DashboardPage() {
                     const pct = row.pendingPercent ?? 0;
                     const barWidth = Math.max(4, Math.min(pct, 100));
                     const color = pct >= 75 ? "#ef4444" : pct >= 40 ? "#f59e0b" : "#22c55e";
+                    const progressLabelColor =
+                      themeMode === "light"
+                        ? pct >= 45
+                          ? "#fffdf9"
+                          : "#171717"
+                        : "#f9fafb";
+                    const progressLabelShadow =
+                      themeMode === "light"
+                        ? pct >= 45
+                          ? "0 1px 1px rgba(23,23,23,0.18)"
+                          : "0 1px 1px rgba(255,253,249,0.9)"
+                        : "none";
 
                     return (
                       <tr key={row.item}>
@@ -1910,11 +1984,11 @@ export default function DashboardPage() {
                             style={{
                               position: "relative",
                               width: "100%",
-                              background: "#050505",
+                              background: uiTheme.progressBg,
                               borderRadius: 999,
                               overflow: "hidden",
                               height: 16,
-                              border: "1px solid #222",
+                              border: uiTheme.progressBorder,
                             }}
                           >
                             <div
@@ -1933,7 +2007,8 @@ export default function DashboardPage() {
                                 fontSize: 11,
                                 textAlign: "center",
                                 fontWeight: 600,
-                                color: "#f9fafb",
+                                color: progressLabelColor,
+                                textShadow: progressLabelShadow,
                                 lineHeight: "16px",
                               }}
                             >

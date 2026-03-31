@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
 import { STATUS_COLORS, STATUS_OPTIONS } from "@/lib/constants/status";
 import OrdersFilters from "./OrdersFilters";
@@ -65,6 +66,7 @@ type EnhancedOrder = {
 const PAGE_SIZE = 20;
 
 export default function OrdersListClient() {
+  const themeMode = useThemeMode();
   const [orders, setOrders] = useState<OrderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export default function OrdersListClient() {
   // Filters
   const [statusFilter, setStatusFilter] = useState("all");
   const [fulfilmentFilter, setFulfilmentFilter] = useState("all");
-  const [hideDispatched, setHideDispatched] = useState(false);
+  const [hideDispatched, setHideDispatched] = useState(true);
 
   // Search (party name + item name only)
   const [searchQuery, setSearchQuery] = useState("");
@@ -414,6 +416,102 @@ export default function OrdersListClient() {
 
   const pagedOrders = visibleOrders.slice(0, visibleCount);
 
+  const uiTheme = useMemo(
+    () =>
+      themeMode === "light"
+        ? {
+            input: {
+              width: "100%",
+              padding: "8px 12px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "var(--surface-plain)",
+              color: "var(--text-primary)",
+              fontSize: 13,
+            },
+            quickButton: {
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "transparent",
+              color: "var(--text-primary)",
+              fontSize: 11,
+            },
+            cardBorder: "#2b3440",
+            expandedBorder: "rgba(31,31,31,0.45)",
+            cardShadow: "0 10px 24px rgba(84,72,52,0.14)",
+            expandedShadow: "0 0 0 1px rgba(23,23,23,0.06)",
+            iconBg: "rgba(23,23,23,0.04)",
+            iconBorder: "1px solid rgba(123,123,123,0.28)",
+            title: "#171717",
+            meta: "#667085",
+            submeta: "#6b7280",
+            strong: "#374151",
+            pillText: "#fffdf9",
+            barTrack: "#f1ece3",
+            barBorder: "1px solid #d9d1c5",
+            expandedDivider: "1px solid #d8d2c9",
+            footerMeta: "#6b7280",
+            link: "#171717",
+            countText: "#4b5563",
+            primaryButton: {
+              padding: "6px 16px",
+              borderRadius: 999,
+              border: "1px solid var(--text-primary)",
+              background: "var(--text-primary)",
+              color: "var(--nav-active-text)",
+              fontSize: 12,
+              cursor: "pointer",
+            },
+          }
+        : {
+            input: {
+              width: "100%",
+              padding: "8px 12px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "var(--surface-plain)",
+              color: "var(--text-primary)",
+              fontSize: 13,
+            },
+            quickButton: {
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--input-border)",
+              background: "transparent",
+              color: "var(--text-primary)",
+              fontSize: 11,
+            },
+            cardBorder: "#1f2933",
+            expandedBorder: "rgba(250,250,250,0.6)",
+            cardShadow: "0 10px 24px rgba(0,0,0,0.35)",
+            expandedShadow: "0 0 0 1px rgba(255,255,255,0.08)",
+            iconBg: "rgba(255,255,255,0.03)",
+            iconBorder: "1px solid rgba(148,163,184,0.35)",
+            title: "#f9fafb",
+            meta: "#9ca3af",
+            submeta: "#d1d5db",
+            strong: "#e5e7eb",
+            pillText: "#f9fafb",
+            barTrack: "#050505",
+            barBorder: "1px solid #262626",
+            expandedDivider: "1px solid #1f2933",
+            footerMeta: "#d1d5db",
+            link: "#f9fafb",
+            countText: "#d1d5db",
+            primaryButton: {
+              padding: "6px 16px",
+              borderRadius: 999,
+              border: "1px solid var(--text-primary)",
+              background: "var(--text-primary)",
+              color: "var(--nav-active-text)",
+              fontSize: 12,
+              cursor: "pointer",
+            },
+          },
+    [themeMode]
+  );
+
   return (
     <>
       <h1 className="section-title">Orders</h1>
@@ -428,15 +526,7 @@ export default function OrdersListClient() {
           placeholder="Search by party or item name..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            borderRadius: 999,
-            border: "1px solid #333",
-            background: "#050505",
-            color: "#f5f5f5",
-            fontSize: 13,
-          }}
+          style={uiTheme.input}
         />
       </div>
 
@@ -457,14 +547,7 @@ export default function OrdersListClient() {
           <button
             type="button"
             onClick={() => setQuickRange("all")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#f5f5f5",
-              fontSize: 11,
-            }}
+            style={uiTheme.quickButton}
           >
             All time
           </button>
@@ -472,14 +555,7 @@ export default function OrdersListClient() {
           <button
             type="button"
             onClick={() => setQuickRange("thisMonth")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#f5f5f5",
-              fontSize: 11,
-            }}
+            style={uiTheme.quickButton}
           >
             This month
           </button>
@@ -487,14 +563,7 @@ export default function OrdersListClient() {
           <button
             type="button"
             onClick={() => setQuickRange("lastMonth")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#f5f5f5",
-              fontSize: 11,
-            }}
+            style={uiTheme.quickButton}
           >
             Last month
           </button>
@@ -502,14 +571,7 @@ export default function OrdersListClient() {
           <button
             type="button"
             onClick={() => setQuickRange("last90")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#f5f5f5",
-              fontSize: 11,
-            }}
+            style={uiTheme.quickButton}
           >
             Last 90 days
           </button>
@@ -525,13 +587,7 @@ export default function OrdersListClient() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
-              }}
+              style={uiTheme.quickButton}
             />
           </div>
 
@@ -541,13 +597,7 @@ export default function OrdersListClient() {
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
-              }}
+              style={uiTheme.quickButton}
             />
           </div>
 
@@ -558,14 +608,7 @@ export default function OrdersListClient() {
                 setDateFrom("");
                 setDateTo("");
               }}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid #333",
-                background: "transparent",
-                color: "#f5f5f5",
-                fontSize: 11,
-              }}
+              style={uiTheme.quickButton}
             >
               Clear date
             </button>
@@ -645,11 +688,11 @@ export default function OrdersListClient() {
                     padding: 14,
                     border:
                       expanded === true
-                        ? "1px solid rgba(250,250,250,0.6)"
-                        : "1px solid #1f2933",
+                        ? `1px solid ${uiTheme.expandedBorder}`
+                        : `1px solid ${uiTheme.cardBorder}`,
                     boxShadow: expanded
-                      ? "0 0 0 1px rgba(255,255,255,0.08)"
-                      : "0 10px 24px rgba(0,0,0,0.35)",
+                      ? uiTheme.expandedShadow
+                      : uiTheme.cardShadow,
                     display: "flex",
                     flexDirection: "column",
                     gap: 10,
@@ -705,8 +748,8 @@ export default function OrdersListClient() {
                           width: 34,
                           height: 34,
                           borderRadius: "999px",
-                          background: expanded ? "rgba(56,189,248,0.08)" : "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(148,163,184,0.35)",
+                          background: expanded ? "rgba(56,189,248,0.08)" : uiTheme.iconBg,
+                          border: uiTheme.iconBorder,
                           boxShadow: expanded
                             ? "0 0 8px rgba(56,189,248,0.45)"
                             : "0 0 2px rgba(148,163,184,0.25)",
@@ -740,7 +783,7 @@ export default function OrdersListClient() {
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
-                            color: "#f9fafb",
+                            color: uiTheme.title,
                           }}
                         >
                           {order.partyName}
@@ -754,7 +797,7 @@ export default function OrdersListClient() {
                             flexWrap: "wrap",
                             gap: 6,
                             marginTop: 2,
-                            color: "#9ca3af",
+                            color: uiTheme.meta,
                           }}
                         >
                           <span>Order #{order.orderCode}</span>
@@ -770,7 +813,7 @@ export default function OrdersListClient() {
                             gap: 6,
                             alignItems: "center",
                             flexWrap: "wrap",
-                            color: "#d1d5db",
+                            color: uiTheme.submeta,
                           }}
                         >
                           <span style={{ opacity: 0.8 }}>
@@ -781,7 +824,7 @@ export default function OrdersListClient() {
                             <span
                               style={{
                                 background: "#ef4444",
-                                color: "#fff",
+                                color: uiTheme.pillText,
                                 padding: "2px 8px",
                                 borderRadius: 999,
                                 fontSize: 10,
@@ -809,7 +852,7 @@ export default function OrdersListClient() {
                         style={{
                           fontSize: 13,
                           fontWeight: 500,
-                          color: "#f9fafb",
+                          color: uiTheme.title,
                         }}
                       >
                         {order.totalQty} pcs
@@ -817,7 +860,7 @@ export default function OrdersListClient() {
                       <div
                         style={{
                           fontSize: 12,
-                          color: "#e5e7eb",
+                          color: uiTheme.strong,
                           opacity: 0.9,
                         }}
                       >
@@ -829,7 +872,7 @@ export default function OrdersListClient() {
                           style={{
                             marginRight: 4,
                             opacity: 0.75,
-                            color: "#d1d5db",
+                            color: uiTheme.submeta,
                           }}
                         >
                           Status:
@@ -840,7 +883,7 @@ export default function OrdersListClient() {
                             padding: "2px 8px",
                             borderRadius: 999,
                             background: statusColor,
-                            color: "#f9fafb",
+                            color: uiTheme.pillText,
                             fontSize: 10,
                             fontWeight: 600,
                             textTransform: "capitalize",
@@ -871,11 +914,11 @@ export default function OrdersListClient() {
                     <div
                       style={{
                         width: "100%",
-                        background: "#050505",
+                        background: uiTheme.barTrack,
                         borderRadius: 999,
                         overflow: "hidden",
                         height: 10,
-                        border: "1px solid #262626",
+                        border: uiTheme.barBorder,
                       }}
                     >
                       <div
@@ -896,7 +939,7 @@ export default function OrdersListClient() {
                         justifyContent: "space-between",
                         flexWrap: "wrap",
                         gap: 4,
-                        color: "#e5e7eb",
+                        color: uiTheme.strong,
                       }}
                     >
                       <span>
@@ -913,7 +956,7 @@ export default function OrdersListClient() {
                     <div
                       style={{
                         marginTop: 10,
-                        borderTop: "1px solid #1f2933",
+                        borderTop: uiTheme.expandedDivider,
                         paddingTop: 8,
                       }}
                     >
@@ -930,7 +973,7 @@ export default function OrdersListClient() {
                           style={{
                             fontSize: 12,
                             opacity: 0.85,
-                            color: "#e5e7eb",
+                            color: uiTheme.strong,
                           }}
                         >
                           Line items in this order
@@ -941,7 +984,7 @@ export default function OrdersListClient() {
                             fontSize: 11,
                             textDecoration: "underline",
                             textUnderlineOffset: 3,
-                            color: "#f9fafb",
+                            color: uiTheme.link,
                           }}
                         >
                           Open detail page →
@@ -1003,7 +1046,7 @@ export default function OrdersListClient() {
                 alignItems: "center",
                 gap: 6,
                 fontSize: 11,
-                color: "#d1d5db",
+                color: uiTheme.countText,
               }}
             >
               <div>
@@ -1022,15 +1065,7 @@ export default function OrdersListClient() {
                       Math.min(c + PAGE_SIZE, visibleOrders.length)
                     )
                   }
-                  style={{
-                    padding: "6px 16px",
-                    borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: "#f5f5f5",
-                    color: "#000",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
+                  style={uiTheme.primaryButton}
                 >
                   Load more orders
                 </button>

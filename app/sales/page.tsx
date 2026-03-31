@@ -4,6 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -234,6 +235,8 @@ function createEmptyCustomerTrendSlots(): CustomerTrendSelectorSlot[] {
 // ---------- PAGE ----------
 
 export default function SalesPage() {
+  const themeMode = useThemeMode();
+
   // Dispatch date filter
   const [dispatchFrom, setDispatchFrom] = useState<string>("");
   const [dispatchTo, setDispatchTo] = useState<string>("");
@@ -270,11 +273,32 @@ export default function SalesPage() {
     () => createEmptyCustomerTrendSlots()
   );
 
-  // Default to this month (same behavior as your dashboard), but All-time must work once user clicks it.
+  const chartTheme = useMemo(
+    () =>
+      themeMode === "light"
+        ? {
+            axisLabel: "#4f4f4f",
+            axisStrong: "#1f1f1f",
+            grid: "#ddd6ca",
+            line: "#cfc6b8",
+            pieStroke: "#f4f2ed",
+          }
+        : {
+            axisLabel: "#cfcfcf",
+            axisStrong: "#e5e5e5",
+            grid: "#1f1f1f",
+            line: "#262626",
+            pieStroke: "#111111",
+          },
+    [themeMode]
+  );
+
+  // Default to the last 90 days so the page stays useful across month boundaries.
   useEffect(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const from = new Date(today.getFullYear(), today.getMonth(), 1);
+    const from = new Date(today);
+    from.setDate(from.getDate() - 89);
     setDispatchFrom(formatDateLocal(from));
     setDispatchTo(formatDateLocal(today));
     setRangeReady(true);
@@ -949,18 +973,22 @@ export default function SalesPage() {
           type: "ordinal",
           sort: "-x",
           title: null,
-          axis: { labelColor: "#e5e5e5", tickColor: "#262626", domainColor: "#262626" },
+          axis: {
+            labelColor: chartTheme.axisStrong,
+            tickColor: chartTheme.line,
+            domainColor: chartTheme.line,
+          },
         },
         x: {
           field: "value",
           type: "quantitative",
           title: "Sales value (₹)",
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
             format: "~s",
           },
         },
@@ -974,7 +1002,7 @@ export default function SalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [topParties]);
+  }, [chartTheme, topParties]);
 
   const categoryCustomerSpec = useMemo(() => {
     return {
@@ -986,7 +1014,7 @@ export default function SalesPage() {
       mark: {
         type: "arc",
         outerRadius: 120,
-        stroke: "#111",
+        stroke: chartTheme.pieStroke,
         strokeWidth: 1,
         tooltip: true,
       },
@@ -1001,8 +1029,8 @@ export default function SalesPage() {
           scale: { domain: CATEGORY_DOMAIN, range: CATEGORY_RANGE },
           legend: {
             title: "Category",
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
             orient: "right",
           },
         },
@@ -1019,7 +1047,7 @@ export default function SalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [partyCategorySlices]);
+  }, [chartTheme, partyCategorySlices]);
 
   const customerTrendSpec = useMemo(() => {
     return {
@@ -1035,11 +1063,11 @@ export default function SalesPage() {
           type: "temporal",
           title: null,
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
             format: "%d %b",
           },
         },
@@ -1048,18 +1076,22 @@ export default function SalesPage() {
           type: "quantitative",
           title: "Sales value (₹)",
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
             format: "~s",
           },
         },
         color: {
           field: "customer_name",
           type: "nominal",
-          legend: { labelColor: "#cfcfcf", titleColor: "#cfcfcf", title: "Selected customers" },
+          legend: {
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            title: "Selected customers",
+          },
         },
         tooltip: [
           { field: "customer_name", title: "Customer" },
@@ -1071,7 +1103,7 @@ export default function SalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [visibleCustomerTrends]);
+  }, [chartTheme, visibleCustomerTrends]);
 
   useEffect(() => {
     setHiddenTopTrendCustomers((prev) => prev.filter((customerId) => topTrendCustomers.includes(customerId)));
@@ -1145,9 +1177,9 @@ export default function SalesPage() {
           style={{
             padding: "8px 12px",
             borderRadius: 999,
-            border: "1px solid #f5f5f5",
-            background: "#f5f5f5",
-            color: "#000",
+            border: "1px solid var(--text-primary)",
+            background: "var(--text-primary)",
+            color: "var(--nav-active-text)",
             fontSize: 12,
             fontWeight: 700,
             height: 36,
@@ -1178,9 +1210,9 @@ export default function SalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -1193,9 +1225,9 @@ export default function SalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -1208,9 +1240,9 @@ export default function SalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -1223,9 +1255,9 @@ export default function SalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -1255,9 +1287,9 @@ export default function SalesPage() {
               style={{
                 padding: "4px 8px",
                 borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
+                border: "1px solid var(--input-border)",
+                background: "var(--surface-plain)",
+                color: "var(--text-primary)",
                 fontSize: 12,
               }}
             />
@@ -1272,9 +1304,9 @@ export default function SalesPage() {
               style={{
                 padding: "4px 8px",
                 borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
+                border: "1px solid var(--input-border)",
+                background: "var(--surface-plain)",
+                color: "var(--text-primary)",
                 fontSize: 12,
               }}
             />
@@ -1290,9 +1322,9 @@ export default function SalesPage() {
               style={{
                 padding: "4px 10px",
                 borderRadius: 999,
-                border: "1px solid #333",
+                border: "1px solid var(--input-border)",
                 background: "transparent",
-                color: "#f5f5f5",
+                color: "var(--text-primary)",
                 fontSize: 11,
               }}
             >
@@ -1464,9 +1496,9 @@ export default function SalesPage() {
                 style={{
                   padding: "6px 10px",
                   borderRadius: 999,
-                  border: "1px solid #333",
+                  border: "1px solid var(--input-border)",
                   background: "transparent",
-                  color: "#f5f5f5",
+                  color: "var(--text-primary)",
                   fontSize: 11,
                 }}
               >
@@ -1518,9 +1550,9 @@ export default function SalesPage() {
             style={{
               padding: "8px 12px",
               borderRadius: 999,
-              border: "1px solid #f5f5f5",
-              background: "#f5f5f5",
-              color: "#000",
+              border: "1px solid var(--text-primary)",
+              background: "var(--text-primary)",
+              color: "var(--nav-active-text)",
               fontSize: 12,
               fontWeight: 800,
               height: 36,

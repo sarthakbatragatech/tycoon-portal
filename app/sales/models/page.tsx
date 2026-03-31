@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
+import useThemeMode from "@/app/_components/useThemeMode";
 import VegaLiteChart from "@/components/VegaLiteChart";
 import { supabase } from "@/lib/supabase";
 
@@ -115,6 +116,7 @@ function createEmptyTrendSlots(): TrendSelectorSlot[] {
 }
 
 export default function ModelSalesPage() {
+  const themeMode = useThemeMode();
   const [dispatchFrom, setDispatchFrom] = useState("");
   const [dispatchTo, setDispatchTo] = useState("");
   const [rangeReady, setRangeReady] = useState(false);
@@ -127,10 +129,31 @@ export default function ModelSalesPage() {
   const [hiddenTopTrendModels, setHiddenTopTrendModels] = useState<string[]>([]);
   const [customTrendSlots, setCustomTrendSlots] = useState<TrendSelectorSlot[]>(() => createEmptyTrendSlots());
 
+  const chartTheme = useMemo(
+    () =>
+      themeMode === "light"
+        ? {
+            axisLabel: "#4f4f4f",
+            axisStrong: "#1f1f1f",
+            grid: "#ddd6ca",
+            line: "#cfc6b8",
+            pieStroke: "#f4f2ed",
+          }
+        : {
+            axisLabel: "#cfcfcf",
+            axisStrong: "#e5e5e5",
+            grid: "#1f1f1f",
+            line: "#262626",
+            pieStroke: "#111111",
+          },
+    [themeMode]
+  );
+
   useEffect(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const from = new Date(today.getFullYear(), today.getMonth(), 1);
+    const from = new Date(today);
+    from.setDate(from.getDate() - 89);
     setDispatchFrom(formatDateLocal(from));
     setDispatchTo(formatDateLocal(today));
     setRangeReady(true);
@@ -444,18 +467,22 @@ export default function ModelSalesPage() {
           type: "ordinal",
           sort: "-x",
           title: null,
-          axis: { labelColor: "#e5e5e5", tickColor: "#262626", domainColor: "#262626" },
+          axis: {
+            labelColor: chartTheme.axisStrong,
+            tickColor: chartTheme.line,
+            domainColor: chartTheme.line,
+          },
         },
         x: {
           field: "qty",
           type: "quantitative",
           title: "Qty (pcs)",
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
           },
         },
         color: { value: "#38bdf8" },
@@ -468,7 +495,7 @@ export default function ModelSalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [topByQty]);
+  }, [chartTheme, topByQty]);
 
   const topRevenueSpec = useMemo(() => {
     return {
@@ -484,18 +511,22 @@ export default function ModelSalesPage() {
           type: "ordinal",
           sort: "-x",
           title: null,
-          axis: { labelColor: "#e5e5e5", tickColor: "#262626", domainColor: "#262626" },
+          axis: {
+            labelColor: chartTheme.axisStrong,
+            tickColor: chartTheme.line,
+            domainColor: chartTheme.line,
+          },
         },
         x: {
           field: "value",
           type: "quantitative",
           title: "Revenue (₹)",
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
             format: "~s",
           },
         },
@@ -509,7 +540,7 @@ export default function ModelSalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [topByRevenue]);
+  }, [chartTheme, topByRevenue]);
 
   const modelTrendSpec = useMemo(() => {
     return {
@@ -525,11 +556,11 @@ export default function ModelSalesPage() {
           type: "temporal",
           title: null,
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
             format: "%d %b",
           },
         },
@@ -538,17 +569,21 @@ export default function ModelSalesPage() {
           type: "quantitative",
           title: "Qty (pcs)",
           axis: {
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
-            gridColor: "#1f1f1f",
-            domainColor: "#262626",
-            tickColor: "#262626",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            gridColor: chartTheme.grid,
+            domainColor: chartTheme.line,
+            tickColor: chartTheme.line,
           },
         },
         color: {
           field: "model",
           type: "nominal",
-          legend: { labelColor: "#cfcfcf", titleColor: "#cfcfcf", title: "Selected models" },
+          legend: {
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
+            title: "Selected models",
+          },
         },
         tooltip: [
           { field: "model", title: "Model" },
@@ -560,7 +595,7 @@ export default function ModelSalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [visibleTrends]);
+  }, [chartTheme, visibleTrends]);
 
   const categoryRevenueSpec = useMemo(() => {
     return {
@@ -572,7 +607,7 @@ export default function ModelSalesPage() {
       mark: {
         type: "arc",
         outerRadius: 120,
-        stroke: "#111",
+        stroke: chartTheme.pieStroke,
         strokeWidth: 1,
         tooltip: true,
       },
@@ -586,8 +621,8 @@ export default function ModelSalesPage() {
           type: "nominal",
           legend: {
             title: "Category",
-            labelColor: "#cfcfcf",
-            titleColor: "#cfcfcf",
+            labelColor: chartTheme.axisLabel,
+            titleColor: chartTheme.axisLabel,
             orient: "right",
           },
           scale: { scheme: "tableau10" },
@@ -605,7 +640,7 @@ export default function ModelSalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [categoryRows]);
+  }, [categoryRows, chartTheme]);
 
   function toggleTopTrendModel(model: string, enabled: boolean) {
     setHiddenTopTrendModels((prev) => {
@@ -651,9 +686,9 @@ export default function ModelSalesPage() {
           style={{
             padding: "8px 12px",
             borderRadius: 999,
-            border: "1px solid #f5f5f5",
-            background: "#f5f5f5",
-            color: "#000",
+            border: "1px solid var(--text-primary)",
+            background: "var(--text-primary)",
+            color: "var(--nav-active-text)",
             fontSize: 12,
             fontWeight: 700,
             height: 36,
@@ -683,9 +718,9 @@ export default function ModelSalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -698,9 +733,9 @@ export default function ModelSalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -713,9 +748,9 @@ export default function ModelSalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -728,9 +763,9 @@ export default function ModelSalesPage() {
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              border: "1px solid #333",
+              border: "1px solid var(--input-border)",
               background: "transparent",
-              color: "#f5f5f5",
+              color: "var(--text-primary)",
               fontSize: 11,
             }}
           >
@@ -758,9 +793,9 @@ export default function ModelSalesPage() {
               style={{
                 padding: "4px 8px",
                 borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
+                border: "1px solid var(--input-border)",
+                background: "var(--surface-plain)",
+                color: "var(--text-primary)",
                 fontSize: 12,
               }}
             />
@@ -775,9 +810,9 @@ export default function ModelSalesPage() {
               style={{
                 padding: "4px 8px",
                 borderRadius: 999,
-                border: "1px solid #333",
-                background: "#050505",
-                color: "#f5f5f5",
+                border: "1px solid var(--input-border)",
+                background: "var(--surface-plain)",
+                color: "var(--text-primary)",
                 fontSize: 12,
               }}
             />
@@ -793,9 +828,9 @@ export default function ModelSalesPage() {
               style={{
                 padding: "4px 10px",
                 borderRadius: 999,
-                border: "1px solid #333",
+                border: "1px solid var(--input-border)",
                 background: "transparent",
-                color: "#f5f5f5",
+                color: "var(--text-primary)",
                 fontSize: 11,
               }}
             >
@@ -937,9 +972,9 @@ export default function ModelSalesPage() {
                       style={{
                         padding: "6px 10px",
                         borderRadius: 999,
-                        border: "1px solid #333",
+                        border: "1px solid var(--input-border)",
                         background: "transparent",
-                        color: "#f5f5f5",
+                        color: "var(--text-primary)",
                         fontSize: 11,
                       }}
                     >

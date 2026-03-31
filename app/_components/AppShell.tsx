@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -7,6 +8,7 @@ const mainNav = [
   { href: "/", label: "Dashboard", exact: true },
   { href: "/orders/new", label: "Punch Order", exact: true },
   { href: "/orders", label: "View Orders", exact: false },
+  { href: "/dispatch-planning", label: "Dispatch Plan", exact: false },
   { href: "/sales", label: "Customer Sales", exact: true },
   { href: "/sales/models", label: "Model Analysis", exact: false },
 ];
@@ -50,9 +52,34 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem("tycoon-theme");
+    const nextTheme =
+      storedTheme === "light" || storedTheme === "dark"
+        ? storedTheme
+        : window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
+
+    if (nextTheme === "dark") return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      setTheme(nextTheme);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.body.dataset.theme = theme;
+    window.localStorage.setItem("tycoon-theme", theme);
+  }, [theme]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       <header className="app-header">
         <div className="header-left">
           <div className="logo">
@@ -101,10 +128,31 @@ export default function AppShell({
           </div>
         </div>
 
+        <div className="theme-toggle sidebar-theme-toggle">
+          <div className="theme-toggle-header">
+            <div className="theme-toggle-label">Theme</div>
+            <div className="theme-toggle-value">{theme === "dark" ? "Dark" : "Light"}</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={theme === "light"}
+            className={`theme-switch${theme === "light" ? " light" : ""}`}
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            <span className="theme-switch-copy">
+              <span className="theme-switch-title">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+            </span>
+            <span className="theme-toggle-track">
+              <span className="theme-toggle-thumb" />
+            </span>
+          </button>
+        </div>
+
         <div className="sidebar-footer">
-          Tycoon · Black &amp; White UI
-          <br />
-          <span style={{ opacity: 0.7 }}>MVP Preview</span>
+          <div>Tycoon · Black &amp; White UI</div>
+          <div style={{ opacity: 0.7, marginTop: 2 }}>MVP Preview</div>
         </div>
       </aside>
 
