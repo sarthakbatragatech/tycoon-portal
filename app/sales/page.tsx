@@ -8,9 +8,9 @@ import { supabase } from "@/lib/supabase";
 
 /**
  * SALES PAGE (Dispatch-based, factory-out) — FULL WIDTH SECTIONS (stacked)
- * 1) Party bar chart (full width)
- * 2) Party list table (full width)
- * 3) Party statistics card (full width) + pie inside it (stable colors)
+ * 1) Customer bar chart (full width)
+ * 2) Customer list table (full width)
+ * 3) Customer statistics card (full width) + pie inside it (stable colors)
  * 4) Item-wise sales table (full width)
  *
  * Fixes included:
@@ -159,7 +159,7 @@ function downloadCsv(filename: string, header: string[], rows: (string | number)
   URL.revokeObjectURL(url);
 }
 
-// Stable palette so colors don’t change when party changes
+// Stable palette so colors don’t change when customer changes
 const CATEGORY_DOMAIN = [
   "small jeep",
   "big jeep",
@@ -206,12 +206,38 @@ type CategorySlice = {
   qty: number;
 };
 
+type CustomerTrendPoint = {
+  date: string;
+  customer_id: string;
+  customer_name: string;
+  qty: number;
+  value: number;
+  product_breakdown: string;
+};
+
+type CustomerTrendSelectorSlot = {
+  id: string;
+  enabled: boolean;
+  customer_id: string;
+};
+
+const CUSTOMER_TREND_SLOT_COUNT = 3;
+
+function createEmptyCustomerTrendSlots(): CustomerTrendSelectorSlot[] {
+  return Array.from({ length: CUSTOMER_TREND_SLOT_COUNT }, (_, index) => ({
+    id: `custom-customer-${index}`,
+    enabled: false,
+    customer_id: "",
+  }));
+}
+
 // ---------- PAGE ----------
 
 export default function SalesPage() {
   // Dispatch date filter
   const [dispatchFrom, setDispatchFrom] = useState<string>("");
   const [dispatchTo, setDispatchTo] = useState<string>("");
+  const [rangeReady, setRangeReady] = useState(false);
 
   // Party aggregates
   const [partyAgg, setPartyAgg] = useState<PartyAgg[]>([]);
@@ -236,6 +262,13 @@ export default function SalesPage() {
 
   const [partyCategorySlices, setPartyCategorySlices] = useState<CategorySlice[]>([]);
   const [partyItems, setPartyItems] = useState<PartyItemRow[]>([]);
+  const [customerTrendRows, setCustomerTrendRows] = useState<CustomerTrendPoint[]>([]);
+  const [customerTrendLoading, setCustomerTrendLoading] = useState(true);
+  const [customerTrendError, setCustomerTrendError] = useState<string | null>(null);
+  const [hiddenTopTrendCustomers, setHiddenTopTrendCustomers] = useState<string[]>([]);
+  const [customCustomerTrendSlots, setCustomCustomerTrendSlots] = useState<CustomerTrendSelectorSlot[]>(
+    () => createEmptyCustomerTrendSlots()
+  );
 
   // Default to this month (same behavior as your dashboard), but All-time must work once user clicks it.
   useEffect(() => {
@@ -244,14 +277,23 @@ export default function SalesPage() {
     const from = new Date(today.getFullYear(), today.getMonth(), 1);
     setDispatchFrom(formatDateLocal(from));
     setDispatchTo(formatDateLocal(today));
+    setRangeReady(true);
   }, []);
 
   useEffect(() => {
+    if (!rangeReady) return;
     loadPartyAgg();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatchFrom, dispatchTo]);
+  }, [dispatchFrom, dispatchTo, rangeReady]);
 
   useEffect(() => {
+    if (!rangeReady) return;
+    loadCustomerTrends();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatchFrom, dispatchTo, rangeReady]);
+
+  useEffect(() => {
+    if (!rangeReady) return;
     if (!selectedPartyId) {
       if (partyAgg && partyAgg.length > 0) {
         setSelectedPartyId(partyAgg[0].party_id);
@@ -272,7 +314,7 @@ export default function SalesPage() {
     }
     loadPartyDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPartyId, dispatchFrom, dispatchTo, partyAgg]);
+  }, [selectedPartyId, dispatchFrom, dispatchTo, partyAgg, rangeReady]);
 
   function setQuickRangeDispatch(mode: "all" | "thisMonth" | "lastMonth" | "last90") {
     const today = new Date();
@@ -389,7 +431,7 @@ export default function SalesPage() {
       console.error("Error loading party agg", error);
       setPartyAgg([]);
       setPartyAggLoading(false);
-      setPartyAggError("Could not load sales by party.");
+      setPartyAggError("Could not load sales by customer.");
       return;
     }
 
@@ -704,6 +746,118 @@ export default function SalesPage() {
     setPartyDetailLoading(false);
   }
 
+  async function loadCustomerTrends() {
+    setCustomerTrendLoading(true);
+    setCustomerTrendError(null);
+
+    const result = await fetchAllRows<any>((from, to) => {
+      let q = supabase
+        .from("dispatch_events")
+        .select(
+          `
+          id,
+          dispatched_at,
+          dispatched_qty,
+          order_lines:order_line_id (
+            dealer_rate_at_order,
+            items (
+              name,
+              company,
+              category
+            ),
+            orders:order_id (
+              party_id,
+              parties:party_id (
+                id,
+                name
+              )
+            )
+          )
+        `
+        )
+        .range(from, to);
+
+      if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
+      if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+
+      return q;
+    });
+
+    if (result.error) {
+      console.error("Error loading customer trends", result.error);
+      setCustomerTrendRows([]);
+      setCustomerTrendError("Could not load customer trend chart.");
+      setCustomerTrendLoading(false);
+      return;
+    }
+
+    const byTrend = new Map<
+      string,
+      {
+        date: string;
+        customer_id: string;
+        customer_name: string;
+        qty: number;
+        value: number;
+        products: Map<string, number>;
+      }
+    >();
+
+    (result.data || []).forEach((row: any) => {
+      const dqty = Number(row?.dispatched_qty ?? 0);
+      if (!dqty || dqty <= 0) return;
+
+      const line = row?.order_lines;
+      const item = safeFirst(line?.items);
+      if (!isTycoonSalesItem(item)) return;
+
+      const ord = safeFirst(line?.orders);
+      const customer = safeFirst(ord?.parties);
+      const customer_id = customer?.id || ord?.party_id || "";
+      const customer_name = (customer?.name || "Unknown customer").trim();
+      const productName = (item?.name || "Unknown item").trim();
+      const date = String(row?.dispatched_at || "").slice(0, 10);
+
+      if (!customer_id || !date) return;
+
+      const trendKey = `${date}__${customer_id}`;
+      if (!byTrend.has(trendKey)) {
+        byTrend.set(trendKey, {
+          date,
+          customer_id,
+          customer_name,
+          qty: 0,
+          value: 0,
+          products: new Map<string, number>(),
+        });
+      }
+
+      const trendAgg = byTrend.get(trendKey)!;
+      trendAgg.qty += dqty;
+      trendAgg.value += dqty * Number(line?.dealer_rate_at_order ?? 0);
+      trendAgg.products.set(productName, (trendAgg.products.get(productName) || 0) + dqty);
+    });
+
+    const trends = Array.from(byTrend.values())
+      .map((row) => ({
+        date: row.date,
+        customer_id: row.customer_id,
+        customer_name: row.customer_name,
+        qty: row.qty,
+        value: row.value,
+        product_breakdown: Array.from(row.products.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([productName, productQty]) => `${productName}: ${productQty}`)
+          .join(" | "),
+      }))
+      .sort((a, b) =>
+        a.date === b.date ? a.customer_name.localeCompare(b.customer_name) : a.date.localeCompare(b.date)
+      );
+
+    setCustomerTrendRows(trends);
+    setCustomerTrendLoading(false);
+  }
+
   // ---------- EXPORTS ----------
 
   function downloadPartyCsvAll() {
@@ -711,9 +865,9 @@ export default function SalesPage() {
       alert("No party data to export.");
       return;
     }
-    const header = ["Party", "SalesValue", "QtyPcs", "OrdersServed"];
+    const header = ["Customer", "SalesValue", "QtyPcs", "OrdersServed"];
     const rows = partyAgg.map((r) => [r.party_name, r.value, r.qty, r.ordersServed]);
-    downloadCsv("tycoon-sales-by-party.csv", header, rows);
+    downloadCsv("tycoon-sales-by-customer.csv", header, rows);
   }
 
   function downloadSelectedPartyItemsCsv() {
@@ -723,13 +877,62 @@ export default function SalesPage() {
     }
     const header = ["Item", "Category", "SalesValue", "QtyPcs", "OrdersCount"];
     const rows = partyItems.map((r) => [r.item, r.category, r.value, r.qty, r.ordersCount]);
-    const fname = `tycoon-${(selectedPartyName || "party").toLowerCase().replace(/\s+/g, "-")}-items.csv`;
+    const fname = `tycoon-${(selectedPartyName || "customer").toLowerCase().replace(/\s+/g, "-")}-items.csv`;
     downloadCsv(fname, header, rows);
   }
 
   // ---------- CHARTS ----------
 
   const topParties = useMemo(() => partyAgg.slice(0, 12), [partyAgg]);
+  const customerTrendTotals = useMemo(() => {
+    const byCustomer = new Map<string, { customer_id: string; customer_name: string; qty: number; value: number }>();
+
+    customerTrendRows.forEach((row) => {
+      if (!byCustomer.has(row.customer_id)) {
+        byCustomer.set(row.customer_id, {
+          customer_id: row.customer_id,
+          customer_name: row.customer_name,
+          qty: 0,
+          value: 0,
+        });
+      }
+
+      const agg = byCustomer.get(row.customer_id)!;
+      agg.qty += row.qty;
+      agg.value += row.value;
+    });
+
+    return Array.from(byCustomer.values()).sort((a, b) => b.value - a.value);
+  }, [customerTrendRows]);
+  const topTrendCustomers = useMemo(
+    () => customerTrendTotals.slice(0, 5).map((row) => row.customer_id),
+    [customerTrendTotals]
+  );
+  const customerTrendOptions = useMemo(
+    () => customerTrendTotals.map((row) => ({ customer_id: row.customer_id, customer_name: row.customer_name })),
+    [customerTrendTotals]
+  );
+  const activeTrendCustomerIds = useMemo(() => {
+    const selected = new Set<string>();
+
+    topTrendCustomers.forEach((customerId) => {
+      if (!hiddenTopTrendCustomers.includes(customerId)) {
+        selected.add(customerId);
+      }
+    });
+
+    customCustomerTrendSlots.forEach((slot) => {
+      if (slot.enabled && slot.customer_id) {
+        selected.add(slot.customer_id);
+      }
+    });
+
+    return Array.from(selected);
+  }, [customCustomerTrendSlots, hiddenTopTrendCustomers, topTrendCustomers]);
+  const visibleCustomerTrends = useMemo(
+    () => customerTrendRows.filter((row) => activeTrendCustomerIds.includes(row.customer_id)),
+    [activeTrendCustomerIds, customerTrendRows]
+  );
 
   const partyBarSpec = useMemo(() => {
     return {
@@ -763,7 +966,7 @@ export default function SalesPage() {
         },
         color: { value: "#a855f7" },
         tooltip: [
-          { field: "party_name", title: "Party" },
+          { field: "party_name", title: "Customer" },
           { field: "value", title: "Sales (₹)", format: ",.0f" },
           { field: "qty", title: "Qty (pcs)" },
           { field: "ordersServed", title: "Orders served" },
@@ -773,22 +976,25 @@ export default function SalesPage() {
     };
   }, [topParties]);
 
-  const partyPieSpec = useMemo(() => {
+  const categoryCustomerSpec = useMemo(() => {
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
       background: "transparent",
       width: "container",
-      height: 260,
+      height: 300,
       data: { values: partyCategorySlices },
       mark: {
         type: "arc",
-        outerRadius: 105,
-        innerRadius: 0,
+        outerRadius: 120,
         stroke: "#111",
         strokeWidth: 1,
+        tooltip: true,
       },
       encoding: {
-        theta: { field: "value", type: "quantitative" },
+        theta: {
+          field: "value",
+          type: "quantitative",
+        },
         color: {
           field: "category",
           type: "nominal",
@@ -800,6 +1006,11 @@ export default function SalesPage() {
             orient: "right",
           },
         },
+        order: {
+          field: "value",
+          type: "quantitative",
+          sort: "descending",
+        },
         tooltip: [
           { field: "category", title: "Category" },
           { field: "value", title: "Sales (₹)", format: ",.0f" },
@@ -809,6 +1020,103 @@ export default function SalesPage() {
       config: { view: { stroke: "transparent" } },
     };
   }, [partyCategorySlices]);
+
+  const customerTrendSpec = useMemo(() => {
+    return {
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      background: "transparent",
+      width: "container",
+      height: 320,
+      data: { values: visibleCustomerTrends },
+      mark: { type: "line", point: true, strokeWidth: 3 },
+      encoding: {
+        x: {
+          field: "date",
+          type: "temporal",
+          title: null,
+          axis: {
+            labelColor: "#cfcfcf",
+            titleColor: "#cfcfcf",
+            gridColor: "#1f1f1f",
+            domainColor: "#262626",
+            tickColor: "#262626",
+            format: "%d %b",
+          },
+        },
+        y: {
+          field: "value",
+          type: "quantitative",
+          title: "Sales value (₹)",
+          axis: {
+            labelColor: "#cfcfcf",
+            titleColor: "#cfcfcf",
+            gridColor: "#1f1f1f",
+            domainColor: "#262626",
+            tickColor: "#262626",
+            format: "~s",
+          },
+        },
+        color: {
+          field: "customer_name",
+          type: "nominal",
+          legend: { labelColor: "#cfcfcf", titleColor: "#cfcfcf", title: "Selected customers" },
+        },
+        tooltip: [
+          { field: "customer_name", title: "Customer" },
+          { field: "date", type: "temporal", title: "Dispatch date" },
+          { field: "value", title: "Sales (₹)", format: ",.0f" },
+          { field: "qty", title: "Qty (pcs)" },
+          { field: "product_breakdown", title: "Products (qty)" },
+        ],
+      },
+      config: { view: { stroke: "transparent" } },
+    };
+  }, [visibleCustomerTrends]);
+
+  useEffect(() => {
+    setHiddenTopTrendCustomers((prev) => prev.filter((customerId) => topTrendCustomers.includes(customerId)));
+  }, [topTrendCustomers]);
+
+  useEffect(() => {
+    setCustomCustomerTrendSlots((prev) =>
+      prev.map((slot) =>
+        !slot.customer_id || customerTrendOptions.some((option) => option.customer_id === slot.customer_id)
+          ? slot
+          : {
+              ...slot,
+              enabled: false,
+              customer_id: "",
+            }
+      )
+    );
+  }, [customerTrendOptions]);
+
+  function toggleTopTrendCustomer(customerId: string, enabled: boolean) {
+    setHiddenTopTrendCustomers((prev) => {
+      if (enabled) {
+        return prev.filter((entry) => entry !== customerId);
+      }
+      return prev.includes(customerId) ? prev : [...prev, customerId];
+    });
+  }
+
+  function updateCustomCustomerTrendSlot(slotId: string, updates: Partial<CustomerTrendSelectorSlot>) {
+    setCustomCustomerTrendSlots((prev) =>
+      prev.map((slot) => {
+        if (slot.id !== slotId) return slot;
+        const next = { ...slot, ...updates };
+        if (!next.customer_id) {
+          next.enabled = false;
+        }
+        return next;
+      })
+    );
+  }
+
+  function resetCustomerTrendSelection() {
+    setHiddenTopTrendCustomers([]);
+    setCustomCustomerTrendSlots(createEmptyCustomerTrendSlots());
+  }
 
   const rangeLabel = useMemo(() => {
     if (!dispatchFrom && !dispatchTo) return "All time";
@@ -824,9 +1132,9 @@ export default function SalesPage() {
     <>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <h1 className="section-title">Sales</h1>
+          <h1 className="section-title">Customer Sales</h1>
           <div className="section-subtitle" style={{ marginTop: 6 }}>
-            Dispatch-based (factory-out) sales analytics · Tycoon only · excludes spares.
+            Dispatch-based customer sales analytics · Tycoon only · excludes spares.
           </div>
           <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>● Live from Supabase</div>
         </div>
@@ -846,7 +1154,7 @@ export default function SalesPage() {
             whiteSpace: "nowrap",
           }}
         >
-          Download Party CSV
+          Download Customer CSV
         </button>
       </div>
 
@@ -994,9 +1302,10 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* 1) PARTY BAR CHART (FULL WIDTH) */}
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div className="card-label">Sales by Party (Top 12)</div>
+      <div className="stacked-sections">
+      {/* 1) CUSTOMER BAR CHART */}
+      <div className="card stacked-card">
+        <div className="card-label">Sales by Customer (Top 12)</div>
         <div className="card-meta">
           Dispatch-based (factory-out). Tycoon only. Excludes spares.
         </div>
@@ -1013,18 +1322,18 @@ export default function SalesPage() {
         )}
 
         {!partyAggLoading && !partyAggError && topParties.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <VegaLiteChart spec={partyBarSpec} height={340} />
+          <div className="chart-panel chart-panel-full">
+            <VegaLiteChart spec={partyBarSpec} height={400} />
           </div>
         )}
       </div>
 
-      {/* 2) PARTY LIST (FULL WIDTH) */}
-      <div className="card" style={{ marginBottom: 14 }}>
+      {/* 2) CUSTOMER LIST */}
+      <div className="card stacked-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
           <div>
-            <div className="card-label">Party List</div>
-            <div className="card-meta">Click a party row to load its stats + item-wise sales below.</div>
+            <div className="card-label">Customer List</div>
+            <div className="card-meta">Click a customer row to load its stats + item-wise sales below.</div>
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1039,7 +1348,7 @@ export default function SalesPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: "45%" }}>Party</th>
+                <th style={{ width: "45%" }}>Customer</th>
                 <th>Sales (₹)</th>
                 <th>Qty (pcs)</th>
                 <th>Orders served</th>
@@ -1049,7 +1358,7 @@ export default function SalesPage() {
               {!partyAggLoading && partyAgg.length === 0 && (
                 <tr>
                   <td colSpan={4} style={{ textAlign: "center", padding: 10, fontSize: 13 }}>
-                    No party sales found in this range.
+                    No customer sales found in this range.
                   </td>
                 </tr>
               )}
@@ -1080,20 +1389,126 @@ export default function SalesPage() {
         </div>
 
         <div style={{ fontSize: 11, opacity: 0.65, marginTop: 8 }}>
-          Showing top 30 parties by sales value. Export CSV for full list.
+          Showing top 30 customers by sales value. Export CSV for full list.
         </div>
       </div>
 
-      {/* 3) PARTY STATS (FULL WIDTH) */}
-      <div className="card" style={{ marginBottom: 14 }}>
+      {/* 3) CUSTOMER TRENDS */}
+      <div className="card stacked-card">
+        <div className="card-label">Top Customers Over Time</div>
+        <div className="card-meta">
+          Daily sales trend. Top 5 customers by sales value are enabled by default, and you can remove them or add others below.
+        </div>
+
+        {customerTrendOptions.length > 0 && (
+          <div className="selector-panel">
+            <div className="selector-grid">
+              {topTrendCustomers.map((customerId) => {
+                const option = customerTrendOptions.find((entry) => entry.customer_id === customerId);
+                const enabled = !hiddenTopTrendCustomers.includes(customerId);
+
+                return (
+                  <label key={customerId} className="selector-row">
+                    <input
+                      type="checkbox"
+                      className="selector-checkbox"
+                      checked={enabled}
+                      onChange={(e) => toggleTopTrendCustomer(customerId, e.target.checked)}
+                    />
+                    <span className="selector-label">{option?.customer_name || "Unknown customer"}</span>
+                  </label>
+                );
+              })}
+
+              {customCustomerTrendSlots.map((slot, index) => (
+                <div key={slot.id} className="selector-row">
+                  <input
+                    type="checkbox"
+                    className="selector-checkbox"
+                    checked={slot.enabled}
+                    onChange={(e) =>
+                      updateCustomCustomerTrendSlot(slot.id, {
+                        enabled: e.target.checked && !!slot.customer_id,
+                      })
+                    }
+                  />
+                  <select
+                    className="selector-select"
+                    value={slot.customer_id}
+                    onChange={(e) =>
+                      updateCustomCustomerTrendSlot(slot.id, {
+                        customer_id: e.target.value,
+                        enabled: e.target.value ? slot.enabled || true : false,
+                      })
+                    }
+                  >
+                    <option value="">Add another customer #{index + 1}</option>
+                    {customerTrendOptions.map((option) => (
+                      <option key={option.customer_id} value={option.customer_id}>
+                        {option.customer_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            <div className="selector-actions">
+              <div style={{ fontSize: 11, opacity: 0.68 }}>
+                Selected: <b style={{ opacity: 0.95 }}>{activeTrendCustomerIds.length}</b>
+              </div>
+
+              <button
+                type="button"
+                onClick={resetCustomerTrendSelection}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "transparent",
+                  color: "#f5f5f5",
+                  fontSize: 11,
+                }}
+              >
+                Reset to top 5
+              </button>
+            </div>
+          </div>
+        )}
+
+        {customerTrendError && (
+          <div style={{ fontSize: 12, marginTop: 8, color: "#fbbf24" }}>{customerTrendError}</div>
+        )}
+
+        {customerTrendLoading ? (
+          <div style={{ fontSize: 12, marginTop: 10 }}>Loading…</div>
+        ) : activeTrendCustomerIds.length === 0 ? (
+          <div style={{ fontSize: 12, marginTop: 10, opacity: 0.8 }}>Select at least one customer to view the trend chart.</div>
+        ) : visibleCustomerTrends.length === 0 ? (
+          <div style={{ fontSize: 12, marginTop: 10, opacity: 0.8 }}>
+            No dated customer trend data found in this range.
+          </div>
+        ) : (
+          <div className="chart-panel chart-panel-full">
+            <VegaLiteChart spec={customerTrendSpec} height={380} />
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 8 }}>
+          Trend charts use dated dispatch events, so older dispatches without event dates will not appear here.
+        </div>
+      </div>
+
+      {/* 4) CUSTOMER KPI SUMMARY */}
+      <div className="card stacked-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div>
             <div className="card-label">
-              Party Statistics:{" "}
+              Customer Statistics:{" "}
               <span style={{ opacity: 0.95 }}>{selectedPartyName || "—"}</span>
             </div>
             <div className="card-meta">
-              Dispatch-based · Tycoon only · excludes spares · pie excludes uncategorised · stable colors.
+              Dispatch-based · Tycoon only · excludes spares · pie excludes uncategorised.
             </div>
           </div>
 
@@ -1122,94 +1537,72 @@ export default function SalesPage() {
 
         {/* TOTAL SALES FIRST */}
         <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-          Total sales (selected party):{" "}
+          Total sales (selected customer):{" "}
           <b style={{ fontSize: 16, opacity: 0.95 }}>
             {partyDetailLoading ? "…" : `₹ ${partyTotals.value.toLocaleString("en-IN")}`}
           </b>
         </div>
 
-        {/* KPIs + Pie (full width container, no wasted space) */}
-        <div
-          style={{
-            marginTop: 12,
-            display: "grid",
-            gridTemplateColumns: "1.1fr 1fr",
-            gap: 14,
-            alignItems: "start",
-          }}
-        >
-          {/* KPI grid */}
-          <div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 10,
-              }}
-            >
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">Qty dispatched</div>
-                <div className="card-value" style={{ fontSize: 24 }}>
-                  {partyDetailLoading ? "…" : `${partyTotals.qty} pcs`}
-                </div>
-                <div className="card-meta">In dispatch range</div>
-              </div>
-
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">Avg realisation / unit</div>
-                <div className="card-value" style={{ fontSize: 24 }}>
-                  {partyDetailLoading ? "…" : `₹ ${partyTotals.avgRealisation.toLocaleString("en-IN")}`}
-                </div>
-                <div className="card-meta">Value ÷ qty</div>
-              </div>
-
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">Orders served</div>
-                <div className="card-value" style={{ fontSize: 24 }}>
-                  {partyDetailLoading ? "…" : partyTotals.ordersServed}
-                </div>
-                <div className="card-meta">Unique orders with dispatch</div>
-              </div>
-
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">Fulfilment-to-date</div>
-                <div className="card-value" style={{ fontSize: 24 }}>
-                  {partyDetailLoading ? "…" : `${partyTotals.fulfillmentPct}%`}
-                </div>
-                <div className="card-meta">On served orders</div>
-              </div>
+        <div className="stats-grid-wide">
+          <div className="card" style={{ padding: 12 }}>
+            <div className="card-label">Qty dispatched</div>
+            <div className="card-value" style={{ fontSize: 24 }}>
+              {partyDetailLoading ? "…" : `${partyTotals.qty} pcs`}
             </div>
-
-            <div style={{ marginTop: 10, fontSize: 11, opacity: 0.65 }}>
-              Fulfilment-to-date = (to-date dispatched ÷ ordered) across orders that had any dispatch in this range.
-            </div>
+            <div className="card-meta">In dispatch range</div>
           </div>
 
-          {/* Pie */}
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 12, letterSpacing: 0.3 }}>
-              Category-wise sales (selected party)
-              <div style={{ fontSize: 11, opacity: 0.65, fontWeight: 400, marginTop: 2 }}>
-                Slice size = ₹ value · excludes spares + uncategorised
-              </div>
+          <div className="card" style={{ padding: 12 }}>
+            <div className="card-label">Avg realisation / unit</div>
+            <div className="card-value" style={{ fontSize: 24 }}>
+              {partyDetailLoading ? "…" : `₹ ${partyTotals.avgRealisation.toLocaleString("en-IN")}`}
             </div>
-
-            <div style={{ marginTop: 10 }}>
-              {!partyDetailLoading && partyCategorySlices.length === 0 ? (
-                <div style={{ fontSize: 12, opacity: 0.75 }}>
-                  No category sales (after excluding uncategorised) for this party in the selected range.
-                </div>
-              ) : (
-                <VegaLiteChart spec={partyPieSpec} height={280} />
-              )}
-            </div>
+            <div className="card-meta">Value ÷ qty</div>
           </div>
+
+          <div className="card" style={{ padding: 12 }}>
+            <div className="card-label">Orders served</div>
+            <div className="card-value" style={{ fontSize: 24 }}>
+              {partyDetailLoading ? "…" : partyTotals.ordersServed}
+            </div>
+            <div className="card-meta">Unique orders with dispatch</div>
+          </div>
+
+          <div className="card" style={{ padding: 12 }}>
+            <div className="card-label">Fulfilment-to-date</div>
+            <div className="card-value" style={{ fontSize: 24 }}>
+              {partyDetailLoading ? "…" : `${partyTotals.fulfillmentPct}%`}
+            </div>
+            <div className="card-meta">On served orders</div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 11, opacity: 0.65 }}>
+          Fulfilment-to-date = (to-date dispatched ÷ ordered) across orders that had any dispatch in this range.
         </div>
       </div>
 
-      {/* 4) ITEM-WISE SALES (FULL WIDTH) */}
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-label">Item-wise Sales (selected party)</div>
+      {/* 5) CUSTOMER CATEGORY GRAPH */}
+      <div className="card stacked-card">
+        <div className="card-label">Category-wise Sales (selected customer)</div>
+        <div className="card-meta">
+          Slice size = ₹ value · excludes spares + uncategorised.
+        </div>
+
+        <div className="chart-panel chart-panel-full">
+          {!partyDetailLoading && partyCategorySlices.length === 0 ? (
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              No category sales (after excluding uncategorised) for this customer in the selected range.
+            </div>
+          ) : (
+            <VegaLiteChart spec={categoryCustomerSpec} height={360} />
+          )}
+        </div>
+      </div>
+
+      {/* 6) ITEM-WISE SALES */}
+      <div className="card stacked-card">
+        <div className="card-label">Item-wise Sales (selected customer)</div>
         <div className="card-meta">
           Dispatch-based (factory-out) · Tycoon only · excludes spares · includes uncategorised items.
         </div>
@@ -1218,7 +1611,7 @@ export default function SalesPage() {
 
         {!partyDetailLoading && partyItems.length === 0 && (
           <div style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>
-            No item sales found for this party in the selected range.
+            No item sales found for this customer in the selected range.
           </div>
         )}
 
@@ -1252,6 +1645,7 @@ export default function SalesPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </>
   );
