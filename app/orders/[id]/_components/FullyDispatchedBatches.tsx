@@ -2,6 +2,8 @@
 // @ts-nocheck
 "use client";
 
+import useThemeMode from "@/app/_components/useThemeMode";
+
 export default function FullyDispatchedBatches({
   fullyDispatchedLines = [],
   dispatchEvents = [],
@@ -11,11 +13,23 @@ export default function FullyDispatchedBatches({
   variant = "screen", // "screen" | "print"
 }: any) {
   const isPrint = variant === "print";
+  const themeMode = useThemeMode();
+  const isLight = themeMode === "light";
 
   const safeLines = Array.isArray(fullyDispatchedLines)
     ? fullyDispatchedLines
     : [];
   const safeEvents = Array.isArray(dispatchEvents) ? dispatchEvents : [];
+
+  const screenBorder = isLight ? "rgba(23,23,23,0.08)" : "rgba(255,255,255,0.10)";
+  const screenSurface = isLight ? "rgba(255,255,255,0.52)" : "rgba(255,255,255,0.02)";
+  const screenRaised = isLight ? "rgba(23,23,23,0.035)" : "rgba(255,255,255,0.03)";
+  const screenRule = isLight ? "rgba(23,23,23,0.07)" : "rgba(255,255,255,0.08)";
+  const screenPrimaryText = isLight ? "rgba(23,23,23,0.92)" : "rgba(255,255,255,0.88)";
+  const screenSecondaryText = isLight ? "rgba(23,23,23,0.62)" : "rgba(255,255,255,0.65)";
+  const screenShadow = isLight
+    ? "0 18px 36px rgba(128, 113, 92, 0.08)"
+    : "0 0 0 1px rgba(255,255,255,0.04) inset";
 
   // Build last-dispatch timestamp per line from dispatch_events
   const lineLastDispatch: Record<string, string> = {};
@@ -62,11 +76,11 @@ export default function FullyDispatchedBatches({
         WebkitColumnBreakInside: "avoid",
       }
     : {
-        border: "1px solid rgba(255,255,255,0.10)",
+        border: `1px solid ${screenBorder}`,
         borderRadius: 14,
-        background: "rgba(255,255,255,0.02)",
+        background: screenSurface,
         overflow: "hidden",
-        boxShadow: "0 0 0 1px rgba(255,255,255,0.04) inset",
+        boxShadow: screenShadow,
       };
 
   const headerStyle: any = isPrint
@@ -88,13 +102,13 @@ export default function FullyDispatchedBatches({
         alignItems: "center",
         justifyContent: "space-between",
         padding: "10px 12px",
-        background: "rgba(255,255,255,0.03)",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        fontWeight: 900,
-        letterSpacing: 0.6,
+        background: screenRaised,
+        borderBottom: `1px solid ${screenRule}`,
+        fontWeight: 800,
+        letterSpacing: "0.08em",
         textTransform: "uppercase",
         fontSize: 11,
-        color: "rgba(255,255,255,0.9)",
+        color: screenPrimaryText,
       };
 
   const tableStyle: any = {
@@ -117,13 +131,13 @@ export default function FullyDispatchedBatches({
       }
     : {
         padding: "10px 12px",
-        fontSize: 10,
-        fontWeight: 900,
+        fontSize: 10.5,
+        fontWeight: 800,
         textTransform: "uppercase",
-        letterSpacing: 0.6,
-        color: "rgba(255,255,255,0.65)",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(255,255,255,0.02)",
+        letterSpacing: "0.08em",
+        color: screenSecondaryText,
+        borderBottom: `1px solid ${screenRule}`,
+        background: screenRaised,
         whiteSpace: "nowrap",
       };
 
@@ -144,8 +158,8 @@ export default function FullyDispatchedBatches({
     : {
         padding: "10px 12px",
         fontSize: 12,
-        color: "rgba(255,255,255,0.88)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        color: screenPrimaryText,
+        borderBottom: `1px solid ${screenRule}`,
         verticalAlign: "middle",
         overflow: "hidden",
         textOverflow: "ellipsis",
@@ -163,11 +177,12 @@ export default function FullyDispatchedBatches({
           style={{
             marginTop: 6,
             marginBottom: 8,
-            fontSize: 11,
-            fontWeight: 900,
+            fontSize: 12,
+            fontWeight: 800,
             textTransform: "uppercase",
-            letterSpacing: 0.08,
-            opacity: 0.9,
+            letterSpacing: "0.04em",
+            color: screenPrimaryText,
+            opacity: isLight ? 0.86 : 0.9,
           }}
         >
           Fully dispatched items (by batch)
