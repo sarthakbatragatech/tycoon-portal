@@ -714,6 +714,8 @@ export default function OrderDetailClient() {
       // actions
       exportPDF={exportPDF}
       shareOnWhatsApp={shareOnWhatsApp}
+      readOnly={false}
+      canSeeFinancials
     />
   );
 }

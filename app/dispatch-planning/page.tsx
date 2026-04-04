@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAuthContext } from "@/app/_components/AuthProvider";
 import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
 import { getStatusColor, getStatusLabel } from "@/lib/constants/status";
@@ -18,6 +19,23 @@ type RawOrder = {
   total_value: number | null;
   parties?: any;
   order_lines?: any[];
+};
+
+type ViewerDispatchOrder = {
+  id: string;
+  order_code: string | null;
+  order_date: string | null;
+  expected_dispatch_date: string | null;
+  status: string | null;
+  remarks: string | null;
+  party_name: string | null;
+  city: string | null;
+  ordered_qty: number | null;
+  dispatched_qty: number | null;
+  pending_qty: number | null;
+  pending_lines: number | null;
+  fulfillment_pct: number | null;
+  items?: PlanningItem[];
 };
 
 type PlanningItem = {
@@ -211,7 +229,9 @@ function getUrgencyMeta(expectedDispatchDate?: string | null) {
 }
 
 export default function DispatchPlanningPage() {
+  const auth = useAuthContext();
   const themeMode = useThemeMode();
+  const isViewOnly = auth?.role !== "admin";
   const today = getTodayLocal();
   const todayISO = formatDateISO(today);
   const [orders, setOrders] = useState<PlanningOrder[]>([]);
@@ -259,6 +279,49 @@ export default function DispatchPlanningPage() {
     [themeMode]
   );
 
+  function mapViewerOrders(rows: ViewerDispatchOrder[]) {
+    return (rows || [])
+      .map((order) => {
+        const urgency = getUrgencyMeta(order.expected_dispatch_date);
+        const items = Array.isArray(order.items)
+          ? order.items.map((item) => ({
+              name: item.name,
+              category: item.category,
+              ordered: safeNumber(item.ordered),
+              dispatched: safeNumber(item.dispatched),
+              pending: safeNumber(item.pending),
+            }))
+          : [];
+
+        return {
+          id: order.id,
+          orderCode: order.order_code || order.id.slice(0, 8),
+          partyName: order.party_name || "Unknown customer",
+          city: order.city || "",
+          orderDate: order.order_date,
+          orderDateLabel: formatDateLabel(order.order_date),
+          expectedDispatchDate: order.expected_dispatch_date,
+          expectedDispatchLabel: formatDateLabel(order.expected_dispatch_date),
+          status: order.status || "pending",
+          statusLabel: getStatusLabel(order.status),
+          statusColor: getStatusColor(order.status),
+          remarks: (order.remarks || "").trim(),
+          totalValue: 0,
+          orderedQty: safeNumber(order.ordered_qty),
+          dispatchedQty: safeNumber(order.dispatched_qty),
+          pendingQty: safeNumber(order.pending_qty),
+          pendingLines: safeNumber(order.pending_lines),
+          urgencyBucket: urgency.bucket,
+          urgencyLabel: urgency.label,
+          urgencySort: urgency.sort,
+          overdueDays: urgency.overdueDays,
+          fulfillmentPct: safeNumber(order.fulfillment_pct),
+          items,
+        } satisfies PlanningOrder;
+      })
+      .filter((order) => order.pendingQty > 0);
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -288,6 +351,23 @@ export default function DispatchPlanningPage() {
   async function loadPlanningOrders() {
     setLoading(true);
     setError(null);
+
+    if (isViewOnly) {
+      const { data, error } = await supabase.rpc("viewer_dispatch_orders");
+
+      if (error) {
+        console.error("Error loading viewer dispatch planning board", error);
+        setOrders([]);
+        setError("Could not load dispatch planning data.");
+        setLoading(false);
+        return;
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+      setOrders(mapViewerOrders(rows as ViewerDispatchOrder[]));
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("orders")
@@ -399,7 +479,14 @@ export default function DispatchPlanningPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [isViewOnly]);
+
+  useEffect(() => {
+    if (!isViewOnly) return;
+    if (sortBy === "value") {
+      setSortBy("urgency");
+    }
+  }, [isViewOnly, sortBy]);
 
   useEffect(() => {
     if (!draggingOrderId) return;
@@ -664,6 +751,8 @@ export default function DispatchPlanningPage() {
   const isAgendaView = isMobileViewport && viewMode === "agenda";
 
   async function moveOrderToDate(orderId: string, nextDate: string) {
+    if (isViewOnly) return;
+
     const order = orders.find((entry) => entry.id === orderId);
     if (!order || movingOrderId) return;
     if (order.expectedDispatchDate === nextDate) {
@@ -720,10 +809,12 @@ export default function DispatchPlanningPage() {
   }
 
   function handleDragStart(orderId: string) {
+    if (isViewOnly) return;
     setDraggingOrderId(orderId);
   }
 
   function handleDragEnd() {
+    if (isViewOnly) return;
     setDraggingOrderId(null);
     setDropTargetDate(null);
   }
@@ -751,9 +842,9 @@ export default function DispatchPlanningPage() {
     return (
       <div
         key={order.id}
-        draggable
-        onDragStart={() => handleDragStart(order.id)}
-        onDragEnd={handleDragEnd}
+        draggable={!isViewOnly}
+        onDragStart={isViewOnly ? undefined : () => handleDragStart(order.id)}
+        onDragEnd={isViewOnly ? undefined : handleDragEnd}
         onClick={() => {
           if (order.expectedDispatchDate) {
             setSelectedDate(order.expectedDispatchDate);
@@ -765,7 +856,7 @@ export default function DispatchPlanningPage() {
           border: "1px solid var(--surface-border)",
           background: tone === "soft" ? uiTheme.cardSoftBg : uiTheme.cardBg,
           padding: "8px 10px",
-          cursor: "grab",
+          cursor: isViewOnly ? "pointer" : "grab",
         }}
       >
         <div style={{ minWidth: 0 }}>
@@ -802,9 +893,9 @@ export default function DispatchPlanningPage() {
     return (
       <div
         key={order.id}
-        draggable
-        onDragStart={() => handleDragStart(order.id)}
-        onDragEnd={handleDragEnd}
+        draggable={!isViewOnly}
+        onDragStart={isViewOnly ? undefined : () => handleDragStart(order.id)}
+        onDragEnd={isViewOnly ? undefined : handleDragEnd}
         className="dispatch-order-card"
         style={{
           borderRadius: 14,
@@ -905,8 +996,17 @@ export default function DispatchPlanningPage() {
 
         <div className="dispatch-order-card-footer">
           <div style={{ fontSize: 11, opacity: 0.65 }}>
-            ₹ {Math.round(order.totalValue).toLocaleString("en-IN")} · {order.pendingLines} pending line
-            {order.pendingLines === 1 ? "" : "s"}
+            {isViewOnly ? (
+              <>
+                {order.pendingLines} pending line
+                {order.pendingLines === 1 ? "" : "s"}
+              </>
+            ) : (
+              <>
+                ₹ {Math.round(order.totalValue).toLocaleString("en-IN")} · {order.pendingLines} pending line
+                {order.pendingLines === 1 ? "" : "s"}
+              </>
+            )}
           </div>
 
           <Link
@@ -1097,7 +1197,7 @@ export default function DispatchPlanningPage() {
           >
             <option value="urgency">Urgency</option>
             <option value="pending">Pending qty</option>
-            <option value="value">Order value</option>
+            {!isViewOnly && <option value="value">Order value</option>}
           </select>
         </div>
       </div>
@@ -1173,14 +1273,18 @@ export default function DispatchPlanningPage() {
             <div className="card-label">Selected Day</div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{formatDateLabel(activeSelectedDate)}</div>
             <div className="card-meta" style={{ marginTop: 4 }}>
-              {selectedDaySummary.orders} orders · {selectedDaySummary.pendingQty.toLocaleString("en-IN")} pcs pending · ₹{" "}
-              {Math.round(selectedDaySummary.totalValue).toLocaleString("en-IN")}
+              {selectedDaySummary.orders} orders · {selectedDaySummary.pendingQty.toLocaleString("en-IN")} pcs pending
+              {!isViewOnly && (
+                <>
+                  {" "}· ₹ {Math.round(selectedDaySummary.totalValue).toLocaleString("en-IN")}
+                </>
+              )}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
               {selectedDayOrders.length === 0 ? (
                 <div style={{ fontSize: 12, opacity: 0.68 }}>
-                  No orders planned for this date. Use the Board view to place unscheduled orders.
+                  {isViewOnly ? "No orders planned for this date." : "No orders planned for this date. Use the Board view to place unscheduled orders."}
                 </div>
               ) : (
                 selectedDayOrders.map((order) => renderFullOrderCard(order))
@@ -1188,14 +1292,16 @@ export default function DispatchPlanningPage() {
             </div>
           </div>
 
-          <div className="card" style={{ borderColor: BUCKET_META.unscheduled.border }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-              <div>
-                <div className="card-label">Unscheduled</div>
-                <div className="card-meta">Switch to Board view to drag these onto a date.</div>
+            <div className="card" style={{ borderColor: BUCKET_META.unscheduled.border }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                <div>
+                  <div className="card-label">Unscheduled</div>
+                <div className="card-meta">
+                  {isViewOnly ? "Pending orders without a dispatch date." : "Switch to Board view to drag these onto a date."}
+                </div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>{unscheduledOrders.length}</div>
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>{unscheduledOrders.length}</div>
-            </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
               {unscheduledOrders.length === 0 ? (
@@ -1232,7 +1338,9 @@ export default function DispatchPlanningPage() {
                 <div className="card-label" style={{ color: "var(--text-primary)" }}>
                   Monthly Calendar
                 </div>
-                <div className="card-meta">Drag order cards onto a date to reschedule them.</div>
+                <div className="card-meta">
+                  {isViewOnly ? "Read-only calendar of pending dispatch orders." : "Drag order cards onto a date to reschedule them."}
+                </div>
               </div>
 
               <div className="dispatch-calendar-actions">
@@ -1339,19 +1447,31 @@ export default function DispatchPlanningPage() {
                   <div
                     key={day.iso}
                     onClick={() => setSelectedDate(day.iso)}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDropTargetDate(day.iso);
-                    }}
-                    onDragLeave={() => {
-                      if (dropTargetDate === day.iso) setDropTargetDate(null);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (draggingOrderId) {
-                        moveOrderToDate(draggingOrderId, day.iso);
-                      }
-                    }}
+                    onDragOver={
+                      isViewOnly
+                        ? undefined
+                        : (e) => {
+                            e.preventDefault();
+                            setDropTargetDate(day.iso);
+                          }
+                    }
+                    onDragLeave={
+                      isViewOnly
+                        ? undefined
+                        : () => {
+                            if (dropTargetDate === day.iso) setDropTargetDate(null);
+                          }
+                    }
+                    onDrop={
+                      isViewOnly
+                        ? undefined
+                        : (e) => {
+                            e.preventDefault();
+                            if (draggingOrderId) {
+                              moveOrderToDate(draggingOrderId, day.iso);
+                            }
+                          }
+                    }
                     style={{
                       minHeight: 132,
                       borderRadius: 14,
@@ -1401,14 +1521,18 @@ export default function DispatchPlanningPage() {
               <div className="card-label">Selected Day</div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>{formatDateLabel(activeSelectedDate)}</div>
               <div className="card-meta" style={{ marginTop: 4 }}>
-                {selectedDaySummary.orders} orders · {selectedDaySummary.pendingQty.toLocaleString("en-IN")} pcs pending · ₹{" "}
-                {Math.round(selectedDaySummary.totalValue).toLocaleString("en-IN")}
+                {selectedDaySummary.orders} orders · {selectedDaySummary.pendingQty.toLocaleString("en-IN")} pcs pending
+                {!isViewOnly && (
+                  <>
+                    {" "}· ₹ {Math.round(selectedDaySummary.totalValue).toLocaleString("en-IN")}
+                  </>
+                )}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
                 {selectedDayOrders.length === 0 ? (
                   <div style={{ fontSize: 12, opacity: 0.68 }}>
-                    No orders planned for this date. Drop a card here to schedule it.
+                    {isViewOnly ? "No orders planned for this date." : "No orders planned for this date. Drop a card here to schedule it."}
                   </div>
                 ) : (
                   selectedDayOrders.map((order) => renderFullOrderCard(order))
@@ -1420,7 +1544,9 @@ export default function DispatchPlanningPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                 <div>
                   <div className="card-label">Unscheduled</div>
-                  <div className="card-meta">Drag these onto any date.</div>
+                  <div className="card-meta">
+                    {isViewOnly ? "Pending orders without a dispatch date." : "Drag these onto any date."}
+                  </div>
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700 }}>{unscheduledOrders.length}</div>
               </div>

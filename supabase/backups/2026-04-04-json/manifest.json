@@ -1,0 +1,41 @@
+{
+  "exported_at": "2026-04-04T08:33:47.904Z",
+  "project_ref": "glfcqxznmifcxlolffap",
+  "source": "supabase service role export",
+  "tables": [
+    {
+      "table": "dispatch_events",
+      "row_count": 2055,
+      "file": "supabase/backups/2026-04-04-json/dispatch_events.json"
+    },
+    {
+      "table": "items",
+      "row_count": 73,
+      "file": "supabase/backups/2026-04-04-json/items.json"
+    },
+    {
+      "table": "order_lines",
+      "row_count": 1916,
+      "file": "supabase/backups/2026-04-04-json/order_lines.json"
+    },
+    {
+      "table": "order_logs",
+      "row_count": 3784,
+      "file": "supabase/backups/2026-04-04-json/order_logs.json"
+    },
+    {
+      "table": "orders",
+      "row_count": 413,
+      "file": "supabase/backups/2026-04-04-json/orders.json"
+    },
+    {
+      "table": "parties",
+      "row_count": 71,
+      "file": "supabase/backups/2026-04-04-json/parties.json"
+    }
+  ],
+  "auth_users": {
+    "row_count": 0,
+    "file": "supabase/backups/2026-04-04-json/auth-users.json"
+  }
+}

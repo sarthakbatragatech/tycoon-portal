@@ -71,6 +71,10 @@ export default function OrderDetailView(props: any) {
 
     // dispatch history
     dispatchEvents,
+
+    // auth / permissions
+    readOnly = false,
+    canSeeFinancials = true,
   } = props;
 
   const lines = Array.isArray(order?.order_lines) ? order.order_lines : [];
@@ -169,6 +173,9 @@ export default function OrderDetailView(props: any) {
     fontSize: 12,
     verticalAlign: "middle",
   };
+  const backHref = readOnly ? "/dispatch-planning" : "/orders";
+  const showFinancials = canSeeFinancials !== false;
+  const pendingTableColSpan = 5 + (showFinancials ? 1 : 0) + (readOnly ? 0 : 2);
 
   if (!order) {
     return (
@@ -178,9 +185,9 @@ export default function OrderDetailView(props: any) {
         <button
           className="pill-button"
           type="button"
-          onClick={() => router?.push?.("/orders")}
+          onClick={() => router?.push?.(backHref)}
         >
-          Back to orders
+          {readOnly ? "Back to dispatch plan" : "Back to orders"}
         </button>
       </>
     );
@@ -193,8 +200,9 @@ export default function OrderDetailView(props: any) {
           <div className="page-header-copy">
             <h1 className="section-title">Order Detail</h1>
             <p className="section-subtitle page-header-subtitle">
-              Full breakdown of this Tycoon order with status, notes & dispatch
-              tracking.
+              {readOnly
+                ? "Read-only dispatch progress for this order. Financial values and editing are hidden for view-only access."
+                : "Full breakdown of this Tycoon order with status, notes & dispatch tracking."}
             </p>
           </div>
         </div>
@@ -246,42 +254,48 @@ export default function OrderDetailView(props: any) {
                   alignItems: "center",
                 }}
               >
-                <select
-                  value={order.status}
-                  onChange={(e) => handleStatusChange?.(e.target.value)}
-                  style={{
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border: "1px solid #333",
-                    background: "#050505",
-                    color: "#f5f5f5",
-                    fontSize: 11,
-                  }}
-                >
-                  {(STATUS_OPTIONS || []).map((opt: any) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                {readOnly ? (
+                  <span style={{ opacity: 0.72 }}>View only access</span>
+                ) : (
+                  <>
+                    <select
+                      value={order.status}
+                      onChange={(e) => handleStatusChange?.(e.target.value)}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: "1px solid #333",
+                        background: "#050505",
+                        color: "#f5f5f5",
+                        fontSize: 11,
+                      }}
+                    >
+                      {(STATUS_OPTIONS || []).map((opt: any) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
 
-                <button
-                  type="button"
-                  onClick={() => saveStatus?.()}
-                  disabled={!!savingStatus}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: savingStatus ? "#111827" : "#f5f5f5",
-                    color: savingStatus ? "#9ca3af" : "#000",
-                    fontSize: 11,
-                    cursor: savingStatus ? "default" : "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  {savingStatus ? "Saving…" : "Save"}
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => saveStatus?.()}
+                      disabled={!!savingStatus}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #f5f5f5",
+                        background: savingStatus ? "#111827" : "#f5f5f5",
+                        color: savingStatus ? "#9ca3af" : "#000",
+                        fontSize: 11,
+                        cursor: savingStatus ? "default" : "pointer",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {savingStatus ? "Saving…" : "Save"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -339,39 +353,51 @@ export default function OrderDetailView(props: any) {
                 Expected dispatch date
               </div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input
-                  type="date"
-                  value={expectedDispatch || ""}
-                  onChange={(e) => setExpectedDispatch?.(e.target.value)}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #333",
-                    background: "#050505",
-                    color: "#f5f5f5",
-                    fontSize: 12,
-                  }}
-                />
+              {readOnly ? (
+                <div style={{ fontSize: 12, fontWeight: 700 }}>
+                  {expectedDispatch
+                    ? new Date(expectedDispatch).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "2-digit",
+                      })
+                    : "Not set"}
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    type="date"
+                    value={expectedDispatch || ""}
+                    onChange={(e) => setExpectedDispatch?.(e.target.value)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #333",
+                      background: "#050505",
+                      color: "#f5f5f5",
+                      fontSize: 12,
+                    }}
+                  />
 
-                <button
-                  type="button"
-                  onClick={() => saveExpectedDispatchDate?.()}
-                  disabled={!!savingExpectedDate}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: savingExpectedDate ? "#111827" : "#f5f5f5",
-                    color: savingExpectedDate ? "#9ca3af" : "#000",
-                    fontSize: 11,
-                    cursor: savingExpectedDate ? "default" : "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  {savingExpectedDate ? "Saving…" : "Save"}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => saveExpectedDispatchDate?.()}
+                    disabled={!!savingExpectedDate}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #f5f5f5",
+                      background: savingExpectedDate ? "#111827" : "#f5f5f5",
+                      color: savingExpectedDate ? "#9ca3af" : "#000",
+                      fontSize: 11,
+                      cursor: savingExpectedDate ? "default" : "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {savingExpectedDate ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -380,12 +406,18 @@ export default function OrderDetailView(props: any) {
             <div className="card-label">Totals</div>
 
             <div className="card-value" style={{ fontSize: 16 }}>
-              {totalOrdered} pcs : {money.format(totalValue)}
+              {showFinancials ? `${totalOrdered} pcs : ${money.format(totalValue)}` : `${totalOrdered} pcs`}
             </div>
 
             <div className="card-meta" style={{ marginTop: 6, fontSize: 12 }}>
               Dispatched: {totalDispatched}/{totalOrdered} pcs
             </div>
+
+            {!showFinancials && (
+              <div className="card-meta" style={{ marginTop: 4, fontSize: 11 }}>
+                Financial values hidden in view-only mode
+              </div>
+            )}
 
             <div style={{ marginTop: 8 }}>
               <div
@@ -418,46 +450,63 @@ export default function OrderDetailView(props: any) {
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-label">Order Remarks</div>
 
-          <textarea
-            value={orderRemarks ?? ""}
-            onChange={(e) => setOrderRemarks?.(e.target.value)}
-            rows={1}
-            placeholder="Add any remarks for this order…"
-            style={{
-              width: "100%",
-              marginTop: 6,
-              fontSize: 12,
-              lineHeight: 1.4,
-              padding: 8,
-              borderRadius: 8,
-              border: "1px solid #333",
-              background: "#050505",
-              color: "#f5f5f5",
-              resize: "vertical",
-              whiteSpace: "pre-wrap",
-              minHeight: 34,
-            }}
-          />
-
-          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => saveRemarks?.()}
-              disabled={!!savingRemarks}
+          {readOnly ? (
+            <div
               style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid #f5f5f5",
-                background: savingRemarks ? "#111827" : "#f5f5f5",
-                color: savingRemarks ? "#9ca3af" : "#000",
-                cursor: savingRemarks ? "default" : "pointer",
-                fontWeight: 800,
-                fontSize: 11,
+                width: "100%",
+                marginTop: 6,
+                fontSize: 12,
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+                opacity: orderRemarks ? 1 : 0.7,
               }}
             >
-              {savingRemarks ? "Saving…" : "Save remarks"}
-            </button>
-          </div>
+              {orderRemarks || "No remarks added."}
+            </div>
+          ) : (
+            <>
+              <textarea
+                value={orderRemarks ?? ""}
+                onChange={(e) => setOrderRemarks?.(e.target.value)}
+                rows={1}
+                placeholder="Add any remarks for this order…"
+                style={{
+                  width: "100%",
+                  marginTop: 6,
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  padding: 8,
+                  borderRadius: 8,
+                  border: "1px solid #333",
+                  background: "#050505",
+                  color: "#f5f5f5",
+                  resize: "vertical",
+                  whiteSpace: "pre-wrap",
+                  minHeight: 34,
+                }}
+              />
+
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => saveRemarks?.()}
+                  disabled={!!savingRemarks}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #f5f5f5",
+                    background: savingRemarks ? "#111827" : "#f5f5f5",
+                    color: savingRemarks ? "#9ca3af" : "#000",
+                    cursor: savingRemarks ? "default" : "pointer",
+                    fontWeight: 800,
+                    fontSize: 11,
+                  }}
+                >
+                  {savingRemarks ? "Saving…" : "Save remarks"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* ITEMS TABLES */}
@@ -470,8 +519,9 @@ export default function OrderDetailView(props: any) {
           {/* Dispatch date halo */}
           <div className="detail-halo-row">
             <span style={{ opacity: 0.8 }}>
-              Enter &quot;Dispatched Today&quot; quantities for the date shown
-              on the right.
+              {readOnly
+                ? "Dispatch quantities and notes are locked in view-only mode."
+                : 'Enter "Dispatched Today" quantities for the date shown on the right.'}
             </span>
 
             <div
@@ -481,33 +531,39 @@ export default function OrderDetailView(props: any) {
                 boxShadow: "0 0 0 1px rgba(56,189,248,0.35)",
                 background:
                   "radial-gradient(circle at top left, rgba(56,189,248,0.18), #020617)",
-              }}
-            >
-              <span
-                style={{
+                }}
+              >
+                <span
+                  style={{
                   fontSize: 11,
                   textTransform: "uppercase",
                   letterSpacing: 0.8,
                   color: "#e0f2fe",
                   fontWeight: 800,
                 }}
-              >
-                Dispatch date
-              </span>
+                >
+                  Dispatch date
+                </span>
 
-              <input
-                type="date"
-                value={dispatchDate || ""}
-                onChange={(e) => setDispatchDate?.(e.target.value)}
-                style={{
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border: "1px solid #0f172a",
-                  background: "#020617",
-                  color: "#f9fafb",
-                  fontSize: 12,
-                }}
-              />
+              {readOnly ? (
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#f9fafb" }}>
+                  Locked
+                </span>
+              ) : (
+                <input
+                  type="date"
+                  value={dispatchDate || ""}
+                  onChange={(e) => setDispatchDate?.(e.target.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid #0f172a",
+                    background: "#020617",
+                    color: "#f9fafb",
+                    fontSize: 12,
+                  }}
+                />
+              )}
             </div>
           </div>
 
@@ -529,32 +585,34 @@ export default function OrderDetailView(props: any) {
           <div className="table-wrapper" style={{ marginTop: 4 }}>
             <table className="table table-mobile-cards" style={{ tableLayout: "fixed", width: "100%" }}>
               <colgroup>
-                <col style={{ width: "20%" }} />
+                <col style={{ width: showFinancials ? (readOnly ? "28%" : "20%") : readOnly ? "30%" : "22%" }} />
+                {showFinancials && <col style={{ width: "10%" }} />}
                 <col style={{ width: "10%" }} />
                 <col style={{ width: "10%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "22%" }} />
-                <col style={{ width: "8%" }} />
+                {!readOnly && <col style={{ width: "10%" }} />}
+                <col style={{ width: readOnly ? "40%" : "22%" }} />
+                {!readOnly && <col style={{ width: "8%" }} />}
               </colgroup>
 
               <thead>
                 <tr>
                   <th style={thLeft}>Item</th>
-                  <th style={thBase}>Rate</th>
+                  {showFinancials && <th style={thBase}>Rate</th>}
                   <th style={thBase}>Ordered</th>
                   <th style={thBase}>Dispatched</th>
                   <th style={thBase}>Pending</th>
-                  <th style={thBase}>
-                    <div style={{ lineHeight: 1.1 }}>
-                      Dispatched
-                      <br />
-                      Today
-                    </div>
-                  </th>
+                  {!readOnly && (
+                    <th style={thBase}>
+                      <div style={{ lineHeight: 1.1 }}>
+                        Dispatched
+                        <br />
+                        Today
+                      </div>
+                    </th>
+                  )}
                   <th style={thBase}>Notes</th>
-                  <th style={thBase}></th>
+                  {!readOnly && <th style={thBase}></th>}
                 </tr>
               </thead>
 
@@ -570,9 +628,11 @@ export default function OrderDetailView(props: any) {
                         {item?.name ?? "Unknown item"}
                       </td>
 
-                      <td data-label="Rate" style={{ ...tdBase, textAlign: "center", opacity: 0.9 }}>
-                        ₹ {rate.toLocaleString("en-IN")}
-                      </td>
+                      {showFinancials && (
+                        <td data-label="Rate" style={{ ...tdBase, textAlign: "center", opacity: 0.9 }}>
+                          ₹ {rate.toLocaleString("en-IN")}
+                        </td>
+                      )}
 
                       <td data-label="Ordered" style={{ ...tdBase, textAlign: "center" }}>
                         {ordered} pcs
@@ -586,68 +646,83 @@ export default function OrderDetailView(props: any) {
                         {pending} pcs
                       </td>
 
-                      <td data-label="Dispatched today" style={{ ...tdBase, textAlign: "center" }}>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={String(dispatchedNow?.[l.id] ?? "")}
-                          onChange={(e) =>
-                            handleDispatchedNowChange?.(l.id, e.target.value)
-                          }
-                          style={{
-                            width: 54,
-                            textAlign: "center",
-                            padding: "6px 10px",
-                            borderRadius: 999,
-                            border: "1px solid #333",
-                            background: "#050505",
-                            color: "#f5f5f5",
-                            fontSize: 12,
-                          }}
-                        />
+                      {!readOnly && (
+                        <td data-label="Dispatched today" style={{ ...tdBase, textAlign: "center" }}>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={String(dispatchedNow?.[l.id] ?? "")}
+                            onChange={(e) =>
+                              handleDispatchedNowChange?.(l.id, e.target.value)
+                            }
+                            style={{
+                              width: 54,
+                              textAlign: "center",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              border: "1px solid #333",
+                              background: "#050505",
+                              color: "#f5f5f5",
+                              fontSize: 12,
+                            }}
+                          />
+                        </td>
+                      )}
+
+                      <td
+                        data-label="Notes"
+                        style={{
+                          ...tdBase,
+                          textAlign: readOnly ? "left" : "center",
+                          whiteSpace: readOnly ? "pre-wrap" : "normal",
+                        }}
+                      >
+                        {readOnly ? (
+                          l?.line_remarks?.trim() || "No notes"
+                        ) : (
+                          <input
+                            type="text"
+                            value={l?.line_remarks ?? ""}
+                            onChange={(e) =>
+                              handleNoteChange?.(l.id, e.target.value)
+                            }
+                            placeholder="Colour / customisation…"
+                            style={{
+                              width: "100%",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              border: "1px solid #333",
+                              background: "#050505",
+                              color: "#f5f5f5",
+                              fontSize: 12,
+                            }}
+                          />
+                        )}
                       </td>
 
-                      <td data-label="Notes" style={{ ...tdBase, textAlign: "center" }}>
-                        <input
-                          type="text"
-                          value={l?.line_remarks ?? ""}
-                          onChange={(e) =>
-                            handleNoteChange?.(l.id, e.target.value)
-                          }
-                          placeholder="Colour / customisation…"
-                          style={{
-                            width: "100%",
-                            padding: "6px 10px",
-                            borderRadius: 999,
-                            border: "1px solid #333",
-                            background: "#050505",
-                            color: "#f5f5f5",
-                            fontSize: 12,
-                          }}
-                        />
-                      </td>
-
-                      <td data-label="Action" style={{ ...tdBase, textAlign: "center" }}>
-                        <div style={{ display: "flex", justifyContent: "center" }}>
-                        <button
-                          type="button"
-                          onClick={() => deleteLine?.(l)}
-                          style={{
-                            width: 70,
-                            padding: "6px 10px",
-                            borderRadius: 999,
-                            border: "1px solid #ef4444",
-                            background: "#ef4444",
-                            color: "#000",
-                            fontSize: 12,
-                            fontWeight: 900,
-                          }}
-                        >
-                          Delete
-                        </button>
-                        </div>
-                      </td>
+                      {!readOnly && (
+                        <td data-label="Action" style={{ ...tdBase, textAlign: "center" }}>
+                          <div style={{ display: "flex", justifyContent: "center" }}>
+                            <button
+                              type="button"
+                              onClick={() => deleteLine?.(l)}
+                              style={{
+                                width: 70,
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #ef4444",
+                                background: "#ef4444",
+                                color: "#000",
+                                fontSize: 12,
+                                fontWeight: 900,
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -655,7 +730,7 @@ export default function OrderDetailView(props: any) {
                 {pendingLines.length === 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={pendingTableColSpan}
                       className="table-empty-cell"
                       style={{ textAlign: "center", padding: 12, opacity: 0.75 }}
                     >
@@ -668,44 +743,46 @@ export default function OrderDetailView(props: any) {
           </div>
 
           {/* BETWEEN TABLES: Save Dispatch + Add Line */}
-          <div className="detail-between-table-actions">
-          <button
-            className="pill-button"
-            type="button"
-            onClick={() => saveDispatch?.()}
-            disabled={!!savingDispatch}
-            style={{
-              background: savingDispatch ? "#14532d" : "#22c55e",
-              borderColor: savingDispatch ? "#14532d" : "#22c55e",
-              color: "#000",
-              fontWeight: 900,
-              opacity: savingDispatch ? 0.75 : 1,
-              cursor: savingDispatch ? "default" : "pointer",
-            }}
-          >
-            {savingDispatch ? "Saving…" : "Save dispatch quantities & notes"}
-          </button>
-
-            {!addingLine && (
+          {!readOnly && (
+            <div className="detail-between-table-actions">
               <button
+                className="pill-button"
                 type="button"
-                onClick={() => setAddingLine?.(true)}
+                onClick={() => saveDispatch?.()}
+                disabled={!!savingDispatch}
                 style={{
-                  padding: "6px 14px",
-                  borderRadius: 999,
-                  border: "1px solid #22c55e",
-                  background: "#22c55e",
+                  background: savingDispatch ? "#14532d" : "#22c55e",
+                  borderColor: savingDispatch ? "#14532d" : "#22c55e",
                   color: "#000",
-                  fontSize: 12,
                   fontWeight: 900,
+                  opacity: savingDispatch ? 0.75 : 1,
+                  cursor: savingDispatch ? "default" : "pointer",
                 }}
               >
-                + Add line
+                {savingDispatch ? "Saving…" : "Save dispatch quantities & notes"}
               </button>
-            )}
-          </div>
 
-          {addingLine && (
+              {!addingLine && (
+                <button
+                  type="button"
+                  onClick={() => setAddingLine?.(true)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 999,
+                    border: "1px solid #22c55e",
+                    background: "#22c55e",
+                    color: "#000",
+                    fontSize: 12,
+                    fontWeight: 900,
+                  }}
+                >
+                  + Add line
+                </button>
+              )}
+            </div>
+          )}
+
+          {!readOnly && addingLine && (
             <div className="detail-add-line-form">
               <span style={{ opacity: 0.8 }}>New line:</span>
 
@@ -819,28 +896,32 @@ export default function OrderDetailView(props: any) {
           <button
             className="pill-button"
             type="button"
-            onClick={() => router?.push?.("/orders")}
+            onClick={() => router?.push?.(backHref)}
           >
-            ← Back to orders
+            {readOnly ? "← Back to dispatch plan" : "← Back to orders"}
           </button>
 
-          <button
-            className="pill-button"
-            type="button"
-            onClick={() => exportPDF?.()}
-            style={{ background: "#e5e5e5", color: "#000" }}
-          >
-            📄 Export as PDF
-          </button>
+          {!readOnly && showFinancials && (
+            <>
+              <button
+                className="pill-button"
+                type="button"
+                onClick={() => exportPDF?.()}
+                style={{ background: "#e5e5e5", color: "#000" }}
+              >
+                📄 Export as PDF
+              </button>
 
-          <button
-            className="pill-button"
-            type="button"
-            onClick={() => shareOnWhatsApp?.()}
-            style={{ background: "#25D366", borderColor: "#25D366", color: "#000" }}
-          >
-            🟢 Share on WhatsApp
-          </button>
+              <button
+                className="pill-button"
+                type="button"
+                onClick={() => shareOnWhatsApp?.()}
+                style={{ background: "#25D366", borderColor: "#25D366", color: "#000" }}
+              >
+                🟢 Share on WhatsApp
+              </button>
+            </>
+          )}
         </div>
 
         <ActivityLogCard logs={logs} />

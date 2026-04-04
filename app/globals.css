@@ -1204,6 +1204,7 @@ body {
   }
 
   .sidebar {
+    display: none;
     position: fixed;
     top: 0;
     left: 0;
@@ -1217,6 +1218,7 @@ body {
   }
 
   .sidebar.open {
+    display: flex;
     transform: translateX(0);
   }
 

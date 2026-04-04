@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuthContext } from "@/app/_components/AuthProvider";
+import { supabase } from "@/lib/supabase";
 
-const mainNav = [
+const adminMainNav = [
   { href: "/", label: "Dashboard", exact: true },
   { href: "/orders/new", label: "Punch Order", exact: true },
   { href: "/orders", label: "View Orders", exact: false },
@@ -13,10 +15,15 @@ const mainNav = [
   { href: "/sales/models", label: "Model Analysis", exact: false },
 ];
 
-const referenceNav = [
+const adminReferenceNav = [
   { href: "/parties", label: "Parties", exact: false },
   { href: "/items", label: "Items", exact: false },
+  { href: "/profile", label: "Profile", exact: false },
 ];
+
+const readOnlyMainNav = [{ href: "/dispatch-planning", label: "Dispatch Plan", exact: false }];
+
+const readOnlyReferenceNav = [{ href: "/profile", label: "Profile", exact: false }];
 
 function isActivePath(pathname: string, href: string, exact = false) {
   if (href === "/") return pathname === "/";
@@ -116,8 +123,15 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const auth = useAuthContext();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isLoginScreen = pathname === "/login";
+  const isReadOnlyUser = !!auth && auth.role !== "admin";
+  const mainNav = isReadOnlyUser ? readOnlyMainNav : adminMainNav;
+  const referenceNav = isReadOnlyUser ? readOnlyReferenceNav : adminReferenceNav;
+  const homeHref = isReadOnlyUser ? "/dispatch-planning" : "/";
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("tycoon-theme");
@@ -142,6 +156,10 @@ export default function AppShell({
     document.body.dataset.theme = theme;
     window.localStorage.setItem("tycoon-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!mobileNavOpen) {
@@ -171,11 +189,26 @@ export default function AppShell({
 
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
 
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setMobileNavOpen(false);
+    router.replace("/login");
+    router.refresh();
+  }
+
+  if (isLoginScreen) {
+    return (
+      <main className="main">
+        <div className="main-inner">{children}</div>
+      </main>
+    );
+  }
+
   return (
     <div className={`app-shell${mobileNavOpen ? " nav-open" : ""}`} data-theme={theme}>
       <header className="app-header">
         <div className="header-left">
-          <Link href="/" className="logo" aria-label="Go to dashboard">
+          <Link href={homeHref} className="logo" aria-label="Go to dashboard">
             <div className="logo-mark">T</div>
             <div className="logo-text">
               <div className="logo-title">TYCOON</div>
@@ -207,10 +240,24 @@ export default function AppShell({
             <span className="header-utility-text">{mobileNavOpen ? "Close" : "Menu"}</span>
           </button>
 
-          <div className="user-badge">
+          <div className="user-badge" title={auth ? `${auth.username} · ${auth.role}` : "Not signed in"}>
             <span className="user-dot" />
-            <span>Admin (Preview)</span>
+            <span>
+              {auth ? `${auth.username} · ${auth.role === "admin" ? "Admin" : "View only"}` : "Not signed in"}
+            </span>
           </div>
+
+          {auth && (
+            <button
+              type="button"
+              className="header-utility-button"
+              onClick={handleSignOut}
+              aria-label="Sign out"
+            >
+              <span className="header-utility-icon">↗</span>
+              <span className="header-utility-text">Sign out</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -229,7 +276,7 @@ export default function AppShell({
 
         <div className="sidebar-footer">
           <div>Tycoon · Black &amp; White UI</div>
-          <div style={{ opacity: 0.7, marginTop: 2 }}>MVP Preview</div>
+          <div style={{ opacity: 0.7, marginTop: 2 }}>{isReadOnlyUser ? "View-only access" : "Admin access"}</div>
         </div>
       </aside>
 

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import OrderDetailClient from "./_components/OrderDetailClient";
+import RoleAwareOrderDetailClient from "./_components/RoleAwareOrderDetailClient";
 
 export default function OrderDetailPage() {
-  return <OrderDetailClient />;
+  return <RoleAwareOrderDetailClient />;
 }
