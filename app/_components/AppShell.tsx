@@ -16,6 +16,7 @@ const adminMainNav = [
 ];
 
 const adminReferenceNav = [
+  { href: "/admin/users", label: "Users", exact: false },
   { href: "/parties", label: "Parties", exact: false },
   { href: "/items", label: "Items", exact: false },
   { href: "/profile", label: "Profile", exact: false },
