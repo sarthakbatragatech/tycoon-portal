@@ -211,7 +211,10 @@ export default function FullyDispatchedBatches({
               </div>
 
               <div style={{ width: "100%", overflowX: "hidden" }}>
-                <table style={tableStyle}>
+                <table
+                  className={isPrint ? "table" : "table table-mobile-cards"}
+                  style={tableStyle}
+                >
                   <colgroup>
                     <col style={{ width: "34%" }} />
                     <col style={{ width: "14%" }} />
@@ -241,11 +244,11 @@ export default function FullyDispatchedBatches({
 
                       return (
                         <tr key={l.id}>
-                          <td style={tdLeft}>{item?.name ?? "Unknown item"}</td>
-                          <td style={tdCenter}>{dispatched} pcs</td>
-                          <td style={tdCenter}>{ordered} pcs</td>
-                          <td style={tdCenter}>{pending} pcs</td>
-                          <td style={{ ...tdLeft, whiteSpace: "normal" }}>{note}</td>
+                          <td data-label="Item" style={tdLeft}>{item?.name ?? "Unknown item"}</td>
+                          <td data-label="Dispatched" style={tdCenter}>{dispatched} pcs</td>
+                          <td data-label="Ordered" style={tdCenter}>{ordered} pcs</td>
+                          <td data-label="Pending" style={tdCenter}>{pending} pcs</td>
+                          <td data-label="Notes" style={{ ...tdLeft, whiteSpace: "normal" }}>{note}</td>
                         </tr>
                       );
                     })}

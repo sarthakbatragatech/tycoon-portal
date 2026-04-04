@@ -146,6 +146,12 @@ function addMonths(date: Date, count: number) {
   return new Date(date.getFullYear(), date.getMonth() + count, 1);
 }
 
+function addDays(date: Date, count: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + count);
+  return next;
+}
+
 function getFirstWorkingDateOfMonth(date: Date) {
   const probe = new Date(date.getFullYear(), date.getMonth(), 1);
   while (probe.getDay() === 0) {
@@ -215,7 +221,10 @@ export default function DispatchPlanningPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [bucketFilter, setBucketFilter] = useState("all");
   const [sortBy, setSortBy] = useState<"urgency" | "pending" | "value">("urgency");
-  const [viewMode, setViewMode] = useState<"calendar" | "board">("calendar");
+  const [viewMode, setViewMode] = useState<"agenda" | "calendar" | "board">("calendar");
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 768
+  );
   const [calendarMonth, setCalendarMonth] = useState(() => formatMonthKey(today));
   const [selectedDate, setSelectedDate] = useState(todayISO);
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
@@ -249,6 +258,32 @@ export default function DispatchPlanningPage() {
           },
     [themeMode]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const frameId = window.requestAnimationFrame(() => {
+      setIsMobileViewport(mediaQuery.matches);
+    });
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobileViewport(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    setViewMode((current) => {
+      if (isMobileViewport && current === "calendar") return "agenda";
+      if (!isMobileViewport && current === "agenda") return "calendar";
+      return current;
+    });
+  }, [isMobileViewport]);
 
   async function loadPlanningOrders() {
     setLoading(true);
@@ -626,6 +661,8 @@ export default function DispatchPlanningPage() {
     };
   }, [selectedDayOrders]);
 
+  const isAgendaView = isMobileViewport && viewMode === "agenda";
+
   async function moveOrderToDate(orderId: string, nextDate: string) {
     const order = orders.find((entry) => entry.id === orderId);
     if (!order || movingOrderId) return;
@@ -700,6 +737,16 @@ export default function DispatchPlanningPage() {
     setSelectedDate(todayISO);
   }
 
+  function shiftSelectedDate(offset: number) {
+    const base = parseISODateLocal(activeSelectedDate || todayISO);
+    if (Number.isNaN(base.getTime())) return;
+
+    const nextDate = addDays(base, offset);
+    const nextISO = formatDateISO(nextDate);
+    setSelectedDate(nextISO);
+    setCalendarMonth(formatMonthKey(nextDate));
+  }
+
   function renderCompactOrderCard(order: PlanningOrder, tone: "dark" | "soft" = "dark") {
     return (
       <div
@@ -758,6 +805,7 @@ export default function DispatchPlanningPage() {
         draggable
         onDragStart={() => handleDragStart(order.id)}
         onDragEnd={handleDragEnd}
+        className="dispatch-order-card"
         style={{
           borderRadius: 14,
           border: "1px solid var(--surface-border)",
@@ -765,7 +813,7 @@ export default function DispatchPlanningPage() {
           padding: 12,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+        <div className="dispatch-order-card-header">
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{order.partyName}</div>
             <div
@@ -800,15 +848,7 @@ export default function DispatchPlanningPage() {
           </div>
         </div>
 
-        <div
-          style={{
-            marginTop: 10,
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 8,
-            fontSize: 12,
-          }}
-        >
+        <div className="dispatch-order-card-meta-grid">
           <div>
             <div style={{ opacity: 0.6, marginBottom: 2 }}>Expected</div>
             <div>{order.expectedDispatchLabel}</div>
@@ -833,17 +873,11 @@ export default function DispatchPlanningPage() {
           <div className="card-label" style={{ marginBottom: 8 }}>
             Top Pending Items
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dispatch-order-card-items">
             {order.items.slice(0, 3).map((item) => (
               <div
                 key={`${order.id}-${item.name}`}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 12,
-                  opacity: 0.92,
-                }}
+                className="dispatch-order-card-item"
               >
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {item.name}
@@ -869,7 +903,7 @@ export default function DispatchPlanningPage() {
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginTop: 12 }}>
+        <div className="dispatch-order-card-footer">
           <div style={{ fontSize: 11, opacity: 0.65 }}>
             ₹ {Math.round(order.totalValue).toLocaleString("en-IN")} · {order.pendingLines} pending line
             {order.pendingLines === 1 ? "" : "s"}
@@ -877,14 +911,9 @@ export default function DispatchPlanningPage() {
 
           <Link
             href={`/orders/${order.id}`}
+            className="dispatch-order-card-link"
             style={{
-              padding: "7px 10px",
-              borderRadius: 999,
-              border: "1px solid var(--input-border)",
-              color: "var(--text-primary)",
-              textDecoration: "none",
-              fontSize: 11,
-              whiteSpace: "nowrap",
+              background: "transparent",
             }}
           >
             Open order
@@ -896,32 +925,24 @@ export default function DispatchPlanningPage() {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div>
+      <div className="page-header">
+        <div className="page-header-copy">
           <h1 className="section-title">Dispatch Planning</h1>
-          <div className="section-subtitle" style={{ marginTop: 6 }}>
+          <div className="section-subtitle page-header-subtitle">
             Pending orders grouped by expected dispatch date so the team can plan today, this week, and what is slipping.
           </div>
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>● Live from Supabase</div>
+          <div className="page-header-note">Live from Supabase</div>
         </div>
 
-        <button
-          type="button"
-          onClick={loadPlanningOrders}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 999,
-            border: "1px solid var(--text-primary)",
-            background: "var(--text-primary)",
-            color: "var(--nav-active-text)",
-            fontSize: 12,
-            fontWeight: 700,
-            height: 36,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Refresh Board
-        </button>
+        <div className="page-header-actions">
+          <button
+            type="button"
+            onClick={loadPlanningOrders}
+            className="action-button primary"
+          >
+            Refresh Board
+          </button>
+        </div>
       </div>
 
       <div className="card-grid" style={{ marginBottom: 18, marginTop: 14 }}>
@@ -951,14 +972,9 @@ export default function DispatchPlanningPage() {
       </div>
 
       <div
-        className="card"
+        className="card responsive-control-grid dispatch-controls"
         style={{
           marginBottom: 18,
-          display: "grid",
-          gridTemplateColumns:
-            "minmax(280px, 1.7fr) minmax(220px, 1.2fr) repeat(3, minmax(170px, 1fr))",
-          gap: 10,
-          alignItems: "end",
         }}
       >
         <div>
@@ -981,17 +997,24 @@ export default function DispatchPlanningPage() {
 
         <div>
           <div className="card-label">View</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            {[
-              { value: "calendar", label: "Calendar" },
-              { value: "board", label: "Board" },
-            ].map((option) => {
+          <div className="inline-actions-row">
+            {(isMobileViewport
+              ? [
+                  { value: "agenda", label: "Agenda" },
+                  { value: "calendar", label: "Calendar" },
+                  { value: "board", label: "Board" },
+                ]
+              : [
+                  { value: "calendar", label: "Calendar" },
+                  { value: "board", label: "Board" },
+                ]
+            ).map((option) => {
               const active = viewMode === option.value;
               return (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => setViewMode(option.value as "calendar" | "board")}
+                  onClick={() => setViewMode(option.value as "agenda" | "calendar" | "board")}
                   style={{
                     flex: 1,
                     padding: "10px 12px",
@@ -1098,17 +1121,113 @@ export default function DispatchPlanningPage() {
             No active pending orders matched the current filters.
           </div>
         </div>
+      ) : isAgendaView ? (
+        <div className="stacked-sections">
+          <div className="card">
+            <div className="card-label">Planning Agenda</div>
+            <div className="card-meta">
+              Mobile view focuses on one working day at a time so planning stays readable without sideways scrolling.
+            </div>
+
+            <div className="dispatch-agenda-controls">
+              <div className="dispatch-agenda-nav">
+                <button
+                  type="button"
+                  onClick={() => shiftSelectedDate(-1)}
+                  className="action-button small secondary"
+                >
+                  Previous day
+                </button>
+                <button
+                  type="button"
+                  onClick={() => shiftSelectedDate(1)}
+                  className="action-button small secondary"
+                >
+                  Next day
+                </button>
+                <button
+                  type="button"
+                  onClick={jumpToToday}
+                  className="action-button small secondary"
+                >
+                  Today
+                </button>
+              </div>
+
+              <label className="dispatch-agenda-date-picker">
+                <span className="card-meta" style={{ opacity: 0.85 }}>Jump to date</span>
+                <input
+                  type="date"
+                  value={activeSelectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setCalendarMonth(formatMonthKey(parseISODateLocal(e.target.value)));
+                  }}
+                  className="compact-input"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-label">Selected Day</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{formatDateLabel(activeSelectedDate)}</div>
+            <div className="card-meta" style={{ marginTop: 4 }}>
+              {selectedDaySummary.orders} orders · {selectedDaySummary.pendingQty.toLocaleString("en-IN")} pcs pending · ₹{" "}
+              {Math.round(selectedDaySummary.totalValue).toLocaleString("en-IN")}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+              {selectedDayOrders.length === 0 ? (
+                <div style={{ fontSize: 12, opacity: 0.68 }}>
+                  No orders planned for this date. Use the Board view to place unscheduled orders.
+                </div>
+              ) : (
+                selectedDayOrders.map((order) => renderFullOrderCard(order))
+              )}
+            </div>
+          </div>
+
+          <div className="card" style={{ borderColor: BUCKET_META.unscheduled.border }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+              <div>
+                <div className="card-label">Unscheduled</div>
+                <div className="card-meta">Switch to Board view to drag these onto a date.</div>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{unscheduledOrders.length}</div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+              {unscheduledOrders.length === 0 ? (
+                <div style={{ fontSize: 12, opacity: 0.65 }}>No unscheduled pending orders.</div>
+              ) : (
+                unscheduledOrders.slice(0, 10).map((order) => renderCompactOrderCard(order, "soft"))
+              )}
+            </div>
+          </div>
+
+          <div className="card" style={{ borderColor: BUCKET_META.overdue.border }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+              <div>
+                <div className="card-label">Overdue Watchlist</div>
+                <div className="card-meta">Most urgent orders to pull forward.</div>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{overdueOrders.length}</div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+              {overdueOrders.length === 0 ? (
+                <div style={{ fontSize: 12, opacity: 0.65 }}>Nothing overdue right now.</div>
+              ) : (
+                overdueOrders.slice(0, 10).map((order) => renderCompactOrderCard(order, "soft"))
+              )}
+            </div>
+          </div>
+        </div>
       ) : viewMode === "calendar" ? (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 2.2fr) minmax(320px, 1fr)",
-            gap: 16,
-            alignItems: "start",
-          }}
-        >
+        <div className="responsive-two-panel">
           <div className="card" style={{ padding: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
+            <div className="dispatch-calendar-header">
               <div>
                 <div className="card-label" style={{ color: "var(--text-primary)" }}>
                   Monthly Calendar
@@ -1116,7 +1235,7 @@ export default function DispatchPlanningPage() {
                 <div className="card-meta">Drag order cards onto a date to reschedule them.</div>
               </div>
 
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div className="dispatch-calendar-actions">
                 <button
                   type="button"
                   onClick={() => goToMonth(-1)}
@@ -1131,7 +1250,7 @@ export default function DispatchPlanningPage() {
                 >
                   Prev
                 </button>
-                <div style={{ minWidth: 160, textAlign: "center", fontSize: 14, fontWeight: 700 }}>
+                <div className="dispatch-calendar-month-label">
                   {formatMonthLabel(calendarMonthDate)}
                 </div>
                 <button
@@ -1165,38 +1284,41 @@ export default function DispatchPlanningPage() {
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-                gap: 8,
-                marginBottom: 8,
-              }}
-            >
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                <div
-                  key={day}
-                  style={{
-                    padding: "8px 10px",
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.12em",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  {day}
-                </div>
-              ))}
-            </div>
+            <div className="calendar-scroll-area">
+              <div
+                className="calendar-grid-min"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                  <div
+                    key={day}
+                    style={{
+                      padding: "8px 10px",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.12em",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {day}
+                  </div>
+                ))}
+              </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-                gap: 8,
-              }}
-            >
-              {calendarDays.map((day) => {
+              <div
+                className="calendar-grid-min"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {calendarDays.map((day) => {
                 if (day.isPlaceholder) {
                   return (
                     <div
@@ -1269,11 +1391,12 @@ export default function DispatchPlanningPage() {
                     </div>
                   </div>
                 );
-              })}
+                })}
+              </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="responsive-sidebar-stack">
             <div className="card">
               <div className="card-label">Selected Day</div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>{formatDateLabel(activeSelectedDate)}</div>
@@ -1331,14 +1454,7 @@ export default function DispatchPlanningPage() {
           </div>
         </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: 16,
-            alignItems: "start",
-          }}
-        >
+        <div className="dispatch-board-grid">
           {(Object.keys(BUCKET_META) as PlanningOrder["urgencyBucket"][]).map((bucket) => {
             const config = BUCKET_META[bucket];
             const rows = grouped[bucket];

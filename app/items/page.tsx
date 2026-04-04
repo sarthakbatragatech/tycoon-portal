@@ -285,12 +285,9 @@ export default function ItemsPage() {
           Add New Item
         </div>
         <div
+          className="responsive-form-grid items-form"
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "2fr 1.4fr 1.4fr 1.2fr 1fr auto",
-            gap: 8,
-            alignItems: "center",
+            marginTop: 2,
           }}
         >
           {/* Name */}

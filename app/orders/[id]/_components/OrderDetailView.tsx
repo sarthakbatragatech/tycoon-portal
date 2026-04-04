@@ -189,11 +189,15 @@ export default function OrderDetailView(props: any) {
   return (
     <>
       <div id="order-export-area">
-        <h1 className="section-title">Order Detail</h1>
-        <p className="section-subtitle">
-          Full breakdown of this Tycoon order with status, notes & dispatch
-          tracking.
-        </p>
+        <div className="page-header">
+          <div className="page-header-copy">
+            <h1 className="section-title">Order Detail</h1>
+            <p className="section-subtitle page-header-subtitle">
+              Full breakdown of this Tycoon order with status, notes & dispatch
+              tracking.
+            </p>
+          </div>
+        </div>
 
         {/* TOP SUMMARY */}
         <div className="card-grid" style={{ marginBottom: 18 }}>
@@ -464,35 +468,19 @@ export default function OrderDetailView(props: any) {
           </div>
 
           {/* Dispatch date halo */}
-          <div
-            style={{
-              marginTop: 8,
-              marginBottom: 8,
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              alignItems: "center",
-              justifyContent: "space-between",
-              fontSize: 12,
-            }}
-          >
+          <div className="detail-halo-row">
             <span style={{ opacity: 0.8 }}>
               Enter &quot;Dispatched Today&quot; quantities for the date shown
               on the right.
             </span>
 
             <div
+              className="detail-dispatch-halo"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 12px",
-                borderRadius: 999,
                 border: "1px solid #38bdf8",
                 boxShadow: "0 0 0 1px rgba(56,189,248,0.35)",
                 background:
                   "radial-gradient(circle at top left, rgba(56,189,248,0.18), #020617)",
-                whiteSpace: "nowrap",
               }}
             >
               <span
@@ -539,7 +527,7 @@ export default function OrderDetailView(props: any) {
           </div>
 
           <div className="table-wrapper" style={{ marginTop: 4 }}>
-            <table className="table" style={{ tableLayout: "fixed", width: "100%" }}>
+            <table className="table table-mobile-cards" style={{ tableLayout: "fixed", width: "100%" }}>
               <colgroup>
                 <col style={{ width: "20%" }} />
                 <col style={{ width: "10%" }} />
@@ -578,27 +566,27 @@ export default function OrderDetailView(props: any) {
 
                   return (
                     <tr key={l.id}>
-                      <td style={{ ...tdBase, textAlign: "left" }}>
+                      <td data-label="Item" style={{ ...tdBase, textAlign: "left" }}>
                         {item?.name ?? "Unknown item"}
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center", opacity: 0.9 }}>
+                      <td data-label="Rate" style={{ ...tdBase, textAlign: "center", opacity: 0.9 }}>
                         ₹ {rate.toLocaleString("en-IN")}
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center" }}>
+                      <td data-label="Ordered" style={{ ...tdBase, textAlign: "center" }}>
                         {ordered} pcs
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center" }}>
+                      <td data-label="Dispatched" style={{ ...tdBase, textAlign: "center" }}>
                         {dispatched} pcs
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center" }}>
+                      <td data-label="Pending" style={{ ...tdBase, textAlign: "center" }}>
                         {pending} pcs
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center" }}>
+                      <td data-label="Dispatched today" style={{ ...tdBase, textAlign: "center" }}>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -620,7 +608,7 @@ export default function OrderDetailView(props: any) {
                         />
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center" }}>
+                      <td data-label="Notes" style={{ ...tdBase, textAlign: "center" }}>
                         <input
                           type="text"
                           value={l?.line_remarks ?? ""}
@@ -640,7 +628,7 @@ export default function OrderDetailView(props: any) {
                         />
                       </td>
 
-                      <td style={{ ...tdBase, textAlign: "center" }}>
+                      <td data-label="Action" style={{ ...tdBase, textAlign: "center" }}>
                         <div style={{ display: "flex", justifyContent: "center" }}>
                         <button
                           type="button"
@@ -668,6 +656,7 @@ export default function OrderDetailView(props: any) {
                   <tr>
                     <td
                       colSpan={8}
+                      className="table-empty-cell"
                       style={{ textAlign: "center", padding: 12, opacity: 0.75 }}
                     >
                       No pending items.
@@ -679,16 +668,7 @@ export default function OrderDetailView(props: any) {
           </div>
 
           {/* BETWEEN TABLES: Save Dispatch + Add Line */}
-          <div
-            style={{
-              marginTop: 14,
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 10,
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
+          <div className="detail-between-table-actions">
           <button
             className="pill-button"
             type="button"
@@ -726,21 +706,7 @@ export default function OrderDetailView(props: any) {
           </div>
 
           {addingLine && (
-            <div
-              style={{
-                width: "100%",
-                marginTop: 10,
-                padding: 10,
-                borderRadius: 12,
-                border: "1px solid #333",
-                background: "#050505",
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                alignItems: "center",
-                fontSize: 12,
-              }}
-            >
+            <div className="detail-add-line-form">
               <span style={{ opacity: 0.8 }}>New line:</span>
 
               <select
@@ -849,7 +815,7 @@ export default function OrderDetailView(props: any) {
         </div>
 
         {/* ACTIONS */}
-        <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="detail-page-actions">
           <button
             className="pill-button"
             type="button"

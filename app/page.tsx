@@ -13,9 +13,11 @@ type VegaLiteSpec = any;
 function VegaLiteChart({
   spec,
   height = 260,
+  showActions = true,
 }: {
   spec: VegaLiteSpec;
   height?: number;
+  showActions?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -37,11 +39,13 @@ function VegaLiteChart({
             height,
           },
           {
-            actions: {
-              export: true,
-              source: false,
-              editor: true,
-            },
+            actions: showActions
+              ? {
+                  export: true,
+                  source: false,
+                  editor: true,
+                }
+              : false,
             tooltip: true,
           }
         );
@@ -58,7 +62,7 @@ function VegaLiteChart({
         view.finalize?.();
       }
     };
-  }, [spec, height]);
+  }, [spec, height, showActions]);
 
   return (
     <div ref={containerRef} style={{ width: "100%", minHeight: height + 30 }} />
@@ -97,9 +101,11 @@ type SalesPoint = {
 function SalesChartCard({
   dispatchFrom,
   dispatchTo,
+  compact = false,
 }: {
   dispatchFrom: string;
   dispatchTo: string;
+  compact?: boolean;
 }) {
   const themeMode = useThemeMode();
   const [data, setData] = useState<SalesPoint[]>([]);
@@ -239,11 +245,12 @@ function SalesChartCard({
           format: "%d %b",
           labelColor: chartTheme.axisLabel,
           titleColor: chartTheme.axisLabel,
-          labelAngle: 0,
-          labelPadding: 10,
+          labelAngle: compact ? -28 : 0,
+          labelPadding: compact ? 6 : 10,
           tickColor: chartTheme.line,
           domainColor: chartTheme.line,
           grid: false,
+          tickCount: compact ? 4 : undefined,
         },
       },
     },
@@ -259,7 +266,7 @@ function SalesChartCard({
           y: {
             field: "value",
             type: "quantitative",
-            title: "₹ Sales",
+            title: compact ? null : "₹ Sales",
             axis: {
               labelColor: chartTheme.axisLabel,
               titleColor: chartTheme.axisLabel,
@@ -290,7 +297,7 @@ function SalesChartCard({
           y: {
             field: "qty",
             type: "quantitative",
-            title: "Pcs",
+            title: compact ? null : "Pcs",
             axis: {
               orient: "right",
               labelColor: chartTheme.axisLabel,
@@ -338,7 +345,7 @@ function SalesChartCard({
 
       {!loading && !error && data.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <VegaLiteChart spec={spec} height={240} />
+          <VegaLiteChart spec={spec} height={240} showActions={!compact} />
         </div>
       )}
     </div>
@@ -380,6 +387,9 @@ const PRODUCTION_ACTIVE_STATUSES = [
 
 export default function DashboardPage() {
   const themeMode = useThemeMode();
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 768
+  );
   const [orders, setOrders] = useState<OrderWithLines[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -500,6 +510,24 @@ export default function DashboardPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const frameId = window.requestAnimationFrame(() => {
+      setIsMobileViewport(mediaQuery.matches);
+    });
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobileViewport(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      mediaQuery.removeEventListener("change", handleChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -1246,12 +1274,17 @@ export default function DashboardPage() {
           type: "ordinal",
           sort: { op: "sum", field: "qty", order: "descending" },
           title: null,
+          axis: {
+            labelLimit: isMobileViewport ? 120 : 180,
+            labelColor: uiTheme.chartStrong,
+            titleColor: uiTheme.chartStrong,
+          },
         },
         x: {
           field: "qty",
           type: "quantitative",
           stack: "zero",
-          title: "Ordered qty split (pcs, Tycoon)",
+          title: isMobileViewport ? null : "Ordered qty split (pcs, Tycoon)",
         },
         color: {
           field: "metric",
@@ -1282,7 +1315,7 @@ export default function DashboardPage() {
         },
       },
     };
-  }, [itemDemandArray, uiTheme]);
+  }, [isMobileViewport, itemDemandArray, uiTheme]);
 
   // --- Category demand stacked (all companies) ---
   const categoryDemandSpec = useMemo(() => {
@@ -1313,18 +1346,42 @@ export default function DashboardPage() {
       data: { values: stackedValues },
       mark: { type: "bar", cornerRadiusEnd: 2 },
       encoding: {
-        x: {
-          field: "category",
-          type: "ordinal",
-          sort: { op: "sum", field: "qty", order: "descending" },
-          title: null,
-        },
-        y: {
-          field: "qty",
-          type: "quantitative",
-          stack: "zero",
-          title: "Ordered qty split (pcs, all companies)",
-        },
+        ...(isMobileViewport
+          ? {
+              y: {
+                field: "category",
+                type: "ordinal",
+                sort: { op: "sum", field: "qty", order: "descending" },
+                title: null,
+                axis: {
+                  labelLimit: 120,
+                },
+              },
+              x: {
+                field: "qty",
+                type: "quantitative",
+                stack: "zero",
+                title: null,
+              },
+            }
+          : {
+              x: {
+                field: "category",
+                type: "ordinal",
+                sort: { op: "sum", field: "qty", order: "descending" },
+                title: null,
+                axis: {
+                  labelAngle: -35,
+                  labelLimit: 120,
+                },
+              },
+              y: {
+                field: "qty",
+                type: "quantitative",
+                stack: "zero",
+                title: "Ordered qty split (pcs, all companies)",
+              },
+            }),
         color: {
           field: "metric",
           type: "nominal",
@@ -1354,7 +1411,7 @@ export default function DashboardPage() {
         },
       },
     };
-  }, [categoryDemandArray, uiTheme]);
+  }, [categoryDemandArray, isMobileViewport, uiTheme]);
 
   const pendingItemsSpec = useMemo(
     () => ({
@@ -1365,8 +1422,14 @@ export default function DashboardPage() {
       data: { values: itemPendingArray },
       mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
       encoding: {
-        y: { field: "item", type: "ordinal", sort: "-x", title: null },
-        x: { field: "pending", type: "quantitative", title: "Pending qty (pcs)" },
+        y: {
+          field: "item",
+          type: "ordinal",
+          sort: "-x",
+          title: null,
+          axis: { labelLimit: isMobileViewport ? 120 : 180 },
+        },
+        x: { field: "pending", type: "quantitative", title: isMobileViewport ? null : "Pending qty (pcs)" },
         color: { value: "#f97316" },
         tooltip: [
           { field: "item", title: "Item" },
@@ -1383,7 +1446,7 @@ export default function DashboardPage() {
         },
       },
     }),
-    [itemPendingArray, uiTheme]
+    [isMobileViewport, itemPendingArray, uiTheme]
   );
 
   const fulfillmentBands = useMemo(() => {
@@ -1406,8 +1469,11 @@ export default function DashboardPage() {
         x: {
           field: "band",
           type: "ordinal",
-          title: "Fulfilment band",
+          title: isMobileViewport ? null : "Fulfilment band",
           sort: ["0–25%", "25–75%", "75–99%", "100%"],
+          axis: {
+            labelAngle: isMobileViewport ? -20 : 0,
+          },
         },
         y: { field: "count", type: "quantitative", title: "Orders" },
         color: {
@@ -1433,7 +1499,7 @@ export default function DashboardPage() {
         },
       },
     }),
-    [fulfillmentBands, uiTheme]
+    [fulfillmentBands, isMobileViewport, uiTheme]
   );
 
   const hasDemandData = totalOrders > 0;
@@ -1442,9 +1508,11 @@ export default function DashboardPage() {
 
   return (
     <>
-      <h1 className="section-title">Tycoon Dashboard</h1>
-      <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 12 }}>
-        ● Live from Supabase
+      <div className="page-header">
+        <div className="page-header-copy">
+          <h1 className="section-title">Tycoon Dashboard</h1>
+          <div className="page-header-note">Live from Supabase</div>
+        </div>
       </div>
 
       {/* ===================== SALES (DISPATCH-DATE) ===================== */}
@@ -1458,8 +1526,8 @@ export default function DashboardPage() {
       </div>
 
       {/* DISPATCH DATE FILTERS */}
-      <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      <div className="filters-panel" style={{ marginBottom: 16 }}>
+        <div className="filters-row">
           <span style={{ opacity: 0.8 }}>Quick range (dispatch):</span>
 
           <button type="button" onClick={() => setQuickRangeDispatch("all")}
@@ -1483,19 +1551,21 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <div className="filters-row filters-row-fields">
           <span style={{ opacity: 0.8 }}>Filter by dispatch date:</span>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>From</span>
-            <input type="date" value={dispatchFrom} onChange={(e) => setDispatchFrom(e.target.value)}
-              style={uiTheme.inputPill} />
-          </div>
+          <div className="filter-field-group">
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>From</span>
+              <input type="date" value={dispatchFrom} onChange={(e) => setDispatchFrom(e.target.value)}
+                className="compact-input" />
+            </div>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>To</span>
-            <input type="date" value={dispatchTo} onChange={(e) => setDispatchTo(e.target.value)}
-              style={uiTheme.inputPill} />
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>To</span>
+              <input type="date" value={dispatchTo} onChange={(e) => setDispatchTo(e.target.value)}
+                className="compact-input" />
+            </div>
           </div>
 
           {(dispatchFrom || dispatchTo) && (
@@ -1547,7 +1617,7 @@ export default function DashboardPage() {
 
       {/* SALES CHART */}
       <div className="card-grid" style={{ marginBottom: 18 }}>
-        <SalesChartCard dispatchFrom={dispatchFrom} dispatchTo={dispatchTo} />
+        <SalesChartCard dispatchFrom={dispatchFrom} dispatchTo={dispatchTo} compact={isMobileViewport} />
       </div>
 
       {/* SALES TABLES */}
@@ -1611,7 +1681,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="table-wrapper" style={{ marginTop: 10 }}>
-              <table className="table">
+              <table className="table table-mobile-cards">
                 <thead>
                   <tr>
                     <th style={{ width: "45%" }}>Category</th>
@@ -1623,7 +1693,7 @@ export default function DashboardPage() {
                 <tbody>
                   {salesCatRows.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: "center", padding: 10, fontSize: 13 }}>
+                      <td colSpan={4} className="table-empty-cell">
                         No sales data in this dispatch range.
                       </td>
                     </tr>
@@ -1633,10 +1703,10 @@ export default function DashboardPage() {
                     const avg = Math.round((r.value || 0) / Math.max(r.qty || 0, 1));
                     return (
                       <tr key={r.category}>
-                        <td>{r.category}</td>
-                        <td>{r.qty} pcs</td>
-                        <td>₹ {(r.value || 0).toLocaleString("en-IN")}</td>
-                        <td>₹ {avg.toLocaleString("en-IN")}</td>
+                        <td data-label="Category">{r.category}</td>
+                        <td data-label="Qty">{r.qty} pcs</td>
+                        <td data-label="Value">₹ {(r.value || 0).toLocaleString("en-IN")}</td>
+                        <td data-label="Avg / unit">₹ {avg.toLocaleString("en-IN")}</td>
                       </tr>
                     );
                   })}
@@ -1694,7 +1764,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="table-wrapper" style={{ marginTop: 10 }}>
-              <table className="table">
+              <table className="table table-mobile-cards">
                 <thead>
                   <tr>
                     <th style={{ width: "38%" }}>Item</th>
@@ -1707,7 +1777,7 @@ export default function DashboardPage() {
                 <tbody>
                   {salesItemRows.length === 0 && (
                     <tr>
-                      <td colSpan={5} style={{ textAlign: "center", padding: 10, fontSize: 13 }}>
+                      <td colSpan={5} className="table-empty-cell">
                         No sales data in this dispatch range.
                       </td>
                     </tr>
@@ -1717,11 +1787,11 @@ export default function DashboardPage() {
                     const avg = Math.round((r.value || 0) / Math.max(r.qty || 0, 1));
                     return (
                       <tr key={r.item}>
-                        <td>{r.item}</td>
-                        <td style={{ opacity: 0.85 }}>{r.category}</td>
-                        <td>{r.qty} pcs</td>
-                        <td>₹ {(r.value || 0).toLocaleString("en-IN")}</td>
-                        <td>₹ {avg.toLocaleString("en-IN")}</td>
+                        <td data-label="Item">{r.item}</td>
+                        <td data-label="Category" style={{ opacity: 0.85 }}>{r.category}</td>
+                        <td data-label="Qty">{r.qty} pcs</td>
+                        <td data-label="Value">₹ {(r.value || 0).toLocaleString("en-IN")}</td>
+                        <td data-label="Avg / unit">₹ {avg.toLocaleString("en-IN")}</td>
                       </tr>
                     );
                   })}
@@ -1743,8 +1813,8 @@ export default function DashboardPage() {
       </div>
 
       {/* ORDER DATE FILTERS */}
-      <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      <div className="filters-panel" style={{ marginBottom: 16 }}>
+        <div className="filters-row">
           <span style={{ opacity: 0.8 }}>Quick range (order):</span>
 
           <button type="button" onClick={() => setQuickRangeOrder("all")}
@@ -1768,19 +1838,21 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <div className="filters-row filters-row-fields">
           <span style={{ opacity: 0.8 }}>Filter by order date:</span>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>From</span>
-            <input type="date" value={orderFrom} onChange={(e) => setOrderFrom(e.target.value)}
-              style={uiTheme.inputPill} />
-          </div>
+          <div className="filter-field-group">
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>From</span>
+              <input type="date" value={orderFrom} onChange={(e) => setOrderFrom(e.target.value)}
+                className="compact-input" />
+            </div>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>To</span>
-            <input type="date" value={orderTo} onChange={(e) => setOrderTo(e.target.value)}
-              style={uiTheme.inputPill} />
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>To</span>
+              <input type="date" value={orderTo} onChange={(e) => setOrderTo(e.target.value)}
+                className="compact-input" />
+            </div>
           </div>
 
           {(orderFrom || orderTo) && (
@@ -1831,12 +1903,16 @@ export default function DashboardPage() {
       {hasDemandData && (
         <>
           {/* ROW 1: Item demand + Category demand */}
-          <div className="card-grid" style={{ marginBottom: 18, gridTemplateColumns: "1.4fr 1fr" }}>
+          <div className="dashboard-visual-grid" style={{ marginBottom: 18 }}>
             <div className="card">
               <div className="card-label">Top Tycoon Items — Ordered vs Dispatched</div>
               <div className="card-meta">Stacked bars: Dispatched + Pending (excludes spares + uncategorised).</div>
               <div style={{ marginTop: 10 }}>
-                <VegaLiteChart spec={itemDemandSpec} height={320} />
+                <VegaLiteChart
+                  spec={itemDemandSpec}
+                  height={isMobileViewport ? 380 : 320}
+                  showActions={!isMobileViewport}
+                />
               </div>
             </div>
 
@@ -1846,18 +1922,26 @@ export default function DashboardPage() {
                 Stacked bars: Dispatched + Pending (excludes spares + uncategorised). If noisy we’ll revert.
               </div>
               <div style={{ marginTop: 10 }}>
-                <VegaLiteChart spec={categoryDemandSpec} height={320} />
+                <VegaLiteChart
+                  spec={categoryDemandSpec}
+                  height={isMobileViewport ? 340 : 320}
+                  showActions={!isMobileViewport}
+                />
               </div>
             </div>
           </div>
 
           {/* ROW 2: Pending items + fulfilment bands */}
-          <div className="card-grid" style={{ marginBottom: 18, gridTemplateColumns: "1.4fr 1fr" }}>
+          <div className="dashboard-visual-grid" style={{ marginBottom: 18 }}>
             <div className="card">
               <div className="card-label">Backlog · Top Pending Items (all companies)</div>
               <div className="card-meta">Focus production on big orange bars first.</div>
               <div style={{ marginTop: 10 }}>
-                <VegaLiteChart spec={pendingItemsSpec} height={320} />
+                <VegaLiteChart
+                  spec={pendingItemsSpec}
+                  height={isMobileViewport ? 380 : 320}
+                  showActions={!isMobileViewport}
+                />
               </div>
             </div>
 
@@ -1865,7 +1949,11 @@ export default function DashboardPage() {
               <div className="card-label">Order Fulfilment Bands</div>
               <div className="card-meta">How many orders are almost done vs just started.</div>
               <div style={{ marginTop: 10 }}>
-                <VegaLiteChart spec={fulfillmentSpec} height={260} />
+                <VegaLiteChart
+                  spec={fulfillmentSpec}
+                  height={isMobileViewport ? 280 : 260}
+                  showActions={!isMobileViewport}
+                />
               </div>
             </div>
           </div>
@@ -1940,7 +2028,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="table-wrapper" style={{ marginTop: 10 }}>
-              <table className="table">
+              <table className="table table-mobile-cards">
                 <thead>
                   <tr>
                     <th style={{ width: "45%" }}>Item</th>
@@ -1952,7 +2040,7 @@ export default function DashboardPage() {
                 <tbody>
                   {backlogItemsRaw.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: "center", padding: 10, fontSize: 13 }}>
+                      <td colSpan={4} className="table-empty-cell">
                         No pending backlog · everything is fully dispatched.
                       </td>
                     </tr>
@@ -1977,9 +2065,9 @@ export default function DashboardPage() {
 
                     return (
                       <tr key={row.item}>
-                        <td>{row.item}</td>
-                        <td>{row.pending} pcs</td>
-                        <td>
+                        <td data-label="Item">{row.item}</td>
+                        <td data-label="Pending qty">{row.pending} pcs</td>
+                        <td data-label="Pending %">
                           <div
                             style={{
                               position: "relative",
@@ -2016,7 +2104,7 @@ export default function DashboardPage() {
                             </div>
                           </div>
                         </td>
-                        <td>{row.ordered} pcs</td>
+                        <td data-label="Total ordered">{row.ordered} pcs</td>
                       </tr>
                     );
                   })}

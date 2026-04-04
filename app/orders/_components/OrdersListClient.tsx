@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
-import { STATUS_COLORS, STATUS_OPTIONS } from "@/lib/constants/status";
+import { STATUS_COLORS } from "@/lib/constants/status";
 import OrdersFilters from "./OrdersFilters";
 
 // Status suggestion helper
@@ -514,13 +514,16 @@ export default function OrdersListClient() {
 
   return (
     <>
-      <h1 className="section-title">Orders</h1>
-      <p className="section-subtitle">
-        View all Tycoon orders, see fulfilment, and drill into details.
-      </p>
+      <div className="page-header">
+        <div className="page-header-copy">
+          <h1 className="section-title">Orders</h1>
+          <p className="section-subtitle page-header-subtitle">
+            View all Tycoon orders, see fulfilment, and drill into details.
+          </p>
+        </div>
+      </div>
 
-      {/* SEARCH BAR */}
-      <div style={{ marginBottom: 12 }}>
+      <div className="orders-search-wrap">
         <input
           type="text"
           placeholder="Search by party or item name..."
@@ -530,18 +533,8 @@ export default function OrdersListClient() {
         />
       </div>
 
-      {/* DATE FILTERS (UI) */}
-      <div
-        style={{
-          marginBottom: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          fontSize: 12,
-        }}
-      >
-        {/* Quick ranges */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="filters-panel orders-date-panel">
+        <div className="filters-row">
           <span style={{ opacity: 0.8 }}>Quick range:</span>
 
           <button
@@ -577,28 +570,29 @@ export default function OrdersListClient() {
           </button>
         </div>
 
-        {/* Manual date inputs */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div className="filters-row filters-row-fields">
           <span style={{ opacity: 0.8 }}>Filter by order date:</span>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>From</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              style={uiTheme.quickButton}
-            />
-          </div>
+          <div className="filter-field-group">
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>From</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="compact-input"
+              />
+            </div>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>To</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              style={uiTheme.quickButton}
-            />
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>To</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="compact-input"
+              />
+            </div>
           </div>
 
           {(dateFrom || dateTo) && (
@@ -608,7 +602,7 @@ export default function OrdersListClient() {
                 setDateFrom("");
                 setDateTo("");
               }}
-              style={uiTheme.quickButton}
+              className="action-button small secondary"
             >
               Clear date
             </button>
@@ -716,30 +710,10 @@ export default function OrdersListClient() {
                   <button
                     type="button"
                     onClick={() => toggleExpand(order.id)}
-                    style={{
-                      width: "100%",
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      margin: 0,
-                      textAlign: "left",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      cursor: "pointer",
-                      gap: 12,
-                    }}
+                    className="orders-card-trigger"
                   >
                     {/* Left block: party + meta */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: 10,
-                        flex: 1,
-                        minWidth: 0,
-                      }}
-                    >
+                    <div className="orders-card-main">
                       <span
                         style={{
                           display: "inline-flex",
@@ -775,7 +749,7 @@ export default function OrdersListClient() {
                         </svg>
                       </span>
 
-                      <div style={{ minWidth: 0 }}>
+                      <div className="orders-card-copy">
                         <div
                           style={{
                             fontSize: 14,
@@ -841,13 +815,7 @@ export default function OrdersListClient() {
                     </div>
 
                     {/* Right block: qty/value + status */}
-                    <div
-                      style={{
-                        textAlign: "right",
-                        fontSize: 11,
-                        minWidth: 150,
-                      }}
-                    >
+                    <div className="orders-card-side">
                       <div
                         style={{
                           fontSize: 13,
@@ -930,18 +898,7 @@ export default function OrdersListClient() {
                         }}
                       />
                     </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        marginTop: 4,
-                        opacity: 0.9,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        flexWrap: "wrap",
-                        gap: 4,
-                        color: uiTheme.strong,
-                      }}
-                    >
+                    <div className="orders-card-fulfilment" style={{ color: uiTheme.strong }}>
                       <span>
                         {order.fulfilmentPercent}% fulfilled ·{" "}
                         {order.dispatchedTotal}/{order.orderedTotal} pcs
@@ -960,15 +917,7 @@ export default function OrdersListClient() {
                         paddingTop: 8,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: 6,
-                          gap: 8,
-                        }}
-                      >
+                      <div className="orders-expanded-header">
                         <div
                           style={{
                             fontSize: 12,
@@ -980,19 +929,15 @@ export default function OrdersListClient() {
                         </div>
                         <Link
                           href={`/orders/${order.id}`}
-                          style={{
-                            fontSize: 11,
-                            textDecoration: "underline",
-                            textUnderlineOffset: 3,
-                            color: uiTheme.link,
-                          }}
+                          className="orders-expanded-link"
+                          style={{ color: uiTheme.link }}
                         >
                           Open detail page →
                         </Link>
                       </div>
 
                       <div className="table-wrapper">
-                        <table className="table">
+                        <table className="table table-mobile-cards">
                           <thead>
                             <tr>
                               <th style={{ width: "45%" }}>Item</th>
@@ -1006,6 +951,7 @@ export default function OrdersListClient() {
                               <tr>
                                 <td
                                   colSpan={4}
+                                  className="table-empty-cell"
                                   style={{
                                     textAlign: "center",
                                     padding: 8,
@@ -1020,10 +966,10 @@ export default function OrdersListClient() {
 
                             {order.lines.map((line, idx) => (
                               <tr key={idx}>
-                                <td>{line.itemName}</td>
-                                <td>{line.ordered} pcs</td>
-                                <td>{line.dispatched} pcs</td>
-                                <td>{line.pending} pcs</td>
+                                <td data-label="Item">{line.itemName}</td>
+                                <td data-label="Ordered">{line.ordered} pcs</td>
+                                <td data-label="Dispatched">{line.dispatched} pcs</td>
+                                <td data-label="Pending">{line.pending} pcs</td>
                               </tr>
                             ))}
                           </tbody>

@@ -671,45 +671,28 @@ export default function ModelSalesPage() {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div>
+      <div className="page-header">
+        <div className="page-header-copy">
           <h1 className="section-title">Model Analysis</h1>
-          <div className="section-subtitle" style={{ marginTop: 6 }}>
+          <div className="section-subtitle page-header-subtitle">
             Dispatch-based model analytics · Tycoon only · excludes spares.
           </div>
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>● Live from Supabase</div>
+          <div className="page-header-note">Live from Supabase</div>
         </div>
 
-        <button
-          type="button"
-          onClick={downloadModelsCsv}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 999,
-            border: "1px solid var(--text-primary)",
-            background: "var(--text-primary)",
-            color: "var(--nav-active-text)",
-            fontSize: 12,
-            fontWeight: 700,
-            height: 36,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Download Models CSV
-        </button>
+        <div className="page-header-actions">
+          <button
+            type="button"
+            onClick={downloadModelsCsv}
+            className="action-button primary"
+          >
+            Download Models CSV
+          </button>
+        </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 12,
-          marginBottom: 14,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          fontSize: 12,
-        }}
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      <div className="filters-panel" style={{ marginTop: 12 }}>
+        <div className="filters-row">
           <span style={{ opacity: 0.8 }}>Quick range:</span>
 
           <button
@@ -772,50 +755,38 @@ export default function ModelSalesPage() {
             Last 90 days
           </button>
 
-          <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.65 }}>
+          <span className="filter-summary">
             Range: <b style={{ opacity: 0.9 }}>{rangeLabel}</b>
           </span>
         </div>
 
-        <div style={{ fontSize: 11, opacity: 0.68 }}>
+        <div className="filter-helper">
           Trend charts are based on dated dispatch events, so they focus on actual dispatch timing.
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <div className="filters-row filters-row-fields">
           <span style={{ opacity: 0.8 }}>Filter by dispatch date:</span>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>From</span>
-            <input
-              type="date"
-              value={dispatchFrom}
-              onChange={(e) => setDispatchFrom(e.target.value)}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px solid var(--input-border)",
-                background: "var(--surface-plain)",
-                color: "var(--text-primary)",
-                fontSize: 12,
-              }}
-            />
-          </div>
+          <div className="filter-field-group">
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>From</span>
+              <input
+                type="date"
+                value={dispatchFrom}
+                onChange={(e) => setDispatchFrom(e.target.value)}
+                className="compact-input"
+              />
+            </div>
 
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>To</span>
-            <input
-              type="date"
-              value={dispatchTo}
-              onChange={(e) => setDispatchTo(e.target.value)}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px solid var(--input-border)",
-                background: "var(--surface-plain)",
-                color: "var(--text-primary)",
-                fontSize: 12,
-              }}
-            />
+            <div className="compact-field">
+              <span style={{ opacity: 0.7 }}>To</span>
+              <input
+                type="date"
+                value={dispatchTo}
+                onChange={(e) => setDispatchTo(e.target.value)}
+                className="compact-input"
+              />
+            </div>
           </div>
 
           {(dispatchFrom || dispatchTo) && (
@@ -825,14 +796,7 @@ export default function ModelSalesPage() {
                 setDispatchFrom("");
                 setDispatchTo("");
               }}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid var(--input-border)",
-                background: "transparent",
-                color: "var(--text-primary)",
-                fontSize: 11,
-              }}
+              className="action-button small secondary"
             >
               Clear filter
             </button>

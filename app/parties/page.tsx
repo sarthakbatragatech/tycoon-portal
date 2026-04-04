@@ -223,11 +223,9 @@ export default function PartiesPage() {
           Add New Party
         </div>
         <div
+          className="responsive-form-grid parties-form"
           style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1.2fr 1.2fr 1fr 1.5fr auto",
-            gap: 8,
-            alignItems: "center",
+            marginTop: 2,
           }}
         >
           <input

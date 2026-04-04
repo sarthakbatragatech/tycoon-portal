@@ -8,9 +8,10 @@ type VegaLiteSpec = any;
 type Props = {
   spec: VegaLiteSpec;
   height?: number;
+  showActions?: boolean;
 };
 
-export default function VegaLiteChart({ spec, height = 260 }: Props) {
+export default function VegaLiteChart({ spec, height = 260, showActions = true }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -31,11 +32,13 @@ export default function VegaLiteChart({ spec, height = 260 }: Props) {
             height,
           },
           {
-            actions: {
-              export: true, // PNG/SVG download
-              source: false,
-              editor: true,
-            },
+            actions: showActions
+              ? {
+                  export: true,
+                  source: false,
+                  editor: true,
+                }
+              : false,
             tooltip: true,
           }
         );
@@ -52,7 +55,7 @@ export default function VegaLiteChart({ spec, height = 260 }: Props) {
         view.finalize?.();
       }
     };
-  }, [spec, height]);
+  }, [spec, height, showActions]);
 
   return (
     <div

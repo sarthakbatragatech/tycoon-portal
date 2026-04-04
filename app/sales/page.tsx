@@ -3,9 +3,19 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useThemeMode from "@/app/_components/useThemeMode";
+import VegaLiteChart from "@/components/VegaLiteChart";
 import { supabase } from "@/lib/supabase";
+import {
+  ActionButton,
+  MetricCard,
+  PageHeader,
+  ResponsiveTable,
+  SalesFilters,
+  SectionCard,
+  StatusMessage,
+} from "./_components/SalesView";
 
 /**
  * SALES PAGE (Dispatch-based, factory-out) — FULL WIDTH SECTIONS (stacked)
@@ -19,59 +29,6 @@ import { supabase } from "@/lib/supabase";
  * - Pie colors are stable via fixed domain/range scale.
  * - Excludes spares everywhere. Pie also excludes uncategorised.
  */
-
-// ---------- INLINE VEGA-LITE CHART COMPONENT ----------
-
-type VegaLiteSpec = any;
-
-function VegaLiteChart({
-  spec,
-  height = 260,
-}: {
-  spec: VegaLiteSpec;
-  height?: number;
-}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    let view: any;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const embedModule = await import("vega-embed");
-        const embed = embedModule.default;
-
-        if (!containerRef.current || cancelled) return;
-
-        const result = await embed(
-          containerRef.current,
-          { ...spec, height },
-          {
-            actions: { export: true, source: false, editor: true },
-            tooltip: true,
-          }
-        );
-
-        view = result.view;
-      } catch (err) {
-        console.error("Error rendering VegaLite chart", err);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (view) view.finalize?.();
-    };
-  }, [spec, height]);
-
-  return (
-    <div
-      ref={containerRef}
-      style={{ width: "100%", minHeight: height + 30 }}
-    />
-  );
-}
 
 // ---------- HELPERS ----------
 
@@ -236,6 +193,9 @@ function createEmptyCustomerTrendSlots(): CustomerTrendSelectorSlot[] {
 
 export default function SalesPage() {
   const themeMode = useThemeMode();
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 768
+  );
 
   // Dispatch date filter
   const [dispatchFrom, setDispatchFrom] = useState<string>("");
@@ -292,6 +252,24 @@ export default function SalesPage() {
           },
     [themeMode]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const frameId = window.requestAnimationFrame(() => {
+      setIsMobileViewport(mediaQuery.matches);
+    });
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobileViewport(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, []);
 
   // Default to the last 90 days so the page stays useful across month boundaries.
   useEffect(() => {
@@ -1069,6 +1047,8 @@ export default function SalesPage() {
             domainColor: chartTheme.line,
             tickColor: chartTheme.line,
             format: "%d %b",
+            labelAngle: isMobileViewport ? -24 : 0,
+            labelLimit: isMobileViewport ? 72 : 100,
           },
         },
         y: {
@@ -1087,11 +1067,25 @@ export default function SalesPage() {
         color: {
           field: "customer_name",
           type: "nominal",
-          legend: {
-            labelColor: chartTheme.axisLabel,
-            titleColor: chartTheme.axisLabel,
-            title: "Selected customers",
-          },
+          legend: isMobileViewport
+            ? {
+                orient: "bottom",
+                direction: "vertical",
+                columns: 1,
+                title: null,
+                labelColor: chartTheme.axisLabel,
+                labelLimit: 220,
+                labelFontSize: 11,
+                symbolType: "circle",
+                symbolSize: 110,
+                rowPadding: 6,
+                offset: 10,
+              }
+            : {
+                labelColor: chartTheme.axisLabel,
+                titleColor: chartTheme.axisLabel,
+                title: "Selected customers",
+              },
         },
         tooltip: [
           { field: "customer_name", title: "Customer" },
@@ -1103,7 +1097,7 @@ export default function SalesPage() {
       },
       config: { view: { stroke: "transparent" } },
     };
-  }, [chartTheme, visibleCustomerTrends]);
+  }, [chartTheme, isMobileViewport, visibleCustomerTrends]);
 
   useEffect(() => {
     setHiddenTopTrendCustomers((prev) => prev.filter((customerId) => topTrendCustomers.includes(customerId)));
@@ -1158,526 +1152,314 @@ export default function SalesPage() {
     return "All time";
   }, [dispatchFrom, dispatchTo]);
 
+  const customerColumns = [
+    {
+      key: "customer",
+      header: "Customer",
+      headerStyle: { width: "45%" },
+      mobileLabel: "Customer",
+      tdClassName: "table-cell-strong",
+      render: (row: PartyAgg) => (
+        <span className={row.party_id === selectedPartyId ? "table-primary-text active" : "table-primary-text"}>
+          {row.party_name}
+        </span>
+      ),
+    },
+    {
+      key: "sales",
+      header: "Sales (₹)",
+      mobileLabel: "Sales",
+      render: (row: PartyAgg) => `₹ ${Math.round(row.value).toLocaleString("en-IN")}`,
+    },
+    {
+      key: "qty",
+      header: "Qty (pcs)",
+      mobileLabel: "Qty",
+      render: (row: PartyAgg) => Math.round(row.qty).toLocaleString("en-IN"),
+    },
+    {
+      key: "ordersServed",
+      header: "Orders served",
+      mobileLabel: "Orders served",
+      render: (row: PartyAgg) => row.ordersServed,
+    },
+  ];
+
+  const itemColumns = [
+    {
+      key: "item",
+      header: "Item",
+      headerStyle: { width: "42%" },
+      mobileLabel: "Item",
+      tdClassName: "table-cell-strong",
+      render: (row: PartyItemRow) => <span className="table-primary-text">{row.item}</span>,
+    },
+    {
+      key: "category",
+      header: "Category",
+      mobileLabel: "Category",
+      render: (row: PartyItemRow) => row.category,
+    },
+    {
+      key: "sales",
+      header: "Sales (₹)",
+      mobileLabel: "Sales",
+      render: (row: PartyItemRow) => `₹ ${Math.round(row.value).toLocaleString("en-IN")}`,
+    },
+    {
+      key: "qty",
+      header: "Qty (pcs)",
+      mobileLabel: "Qty",
+      render: (row: PartyItemRow) => Math.round(row.qty).toLocaleString("en-IN"),
+    },
+    {
+      key: "ordersCount",
+      header: "Orders",
+      mobileLabel: "Orders",
+      render: (row: PartyItemRow) => row.ordersCount,
+    },
+  ];
+
   // ---------- RENDER ----------
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h1 className="section-title">Customer Sales</h1>
-          <div className="section-subtitle" style={{ marginTop: 6 }}>
-            Dispatch-based customer sales analytics · Tycoon only · excludes spares.
-          </div>
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>● Live from Supabase</div>
-        </div>
+      <PageHeader
+        title="Customer Sales"
+        subtitle="Dispatch-based customer sales analytics · Tycoon only · excludes spares."
+        note="Live from Supabase"
+        action={
+          <ActionButton variant="primary" onClick={downloadPartyCsvAll}>
+            Download Customer CSV
+          </ActionButton>
+        }
+      />
 
-        <button
-          type="button"
-          onClick={downloadPartyCsvAll}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 999,
-            border: "1px solid var(--text-primary)",
-            background: "var(--text-primary)",
-            color: "var(--nav-active-text)",
-            fontSize: 12,
-            fontWeight: 700,
-            height: 36,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Download Customer CSV
-        </button>
-      </div>
-
-      {/* FILTERS */}
-      <div
-        style={{
-          marginTop: 12,
-          marginBottom: 14,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          fontSize: 12,
+      <SalesFilters
+        dispatchFrom={dispatchFrom}
+        dispatchTo={dispatchTo}
+        rangeLabel={rangeLabel}
+        onQuickRange={setQuickRangeDispatch}
+        onDispatchFromChange={setDispatchFrom}
+        onDispatchToChange={setDispatchTo}
+        onClearFilter={() => {
+          setDispatchFrom("");
+          setDispatchTo("");
         }}
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-          <span style={{ opacity: 0.8 }}>Quick range:</span>
-
-          <button
-            type="button"
-            onClick={() => setQuickRangeDispatch("all")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid var(--input-border)",
-              background: "transparent",
-              color: "var(--text-primary)",
-              fontSize: 11,
-            }}
-          >
-            All time
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setQuickRangeDispatch("thisMonth")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid var(--input-border)",
-              background: "transparent",
-              color: "var(--text-primary)",
-              fontSize: 11,
-            }}
-          >
-            This month
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setQuickRangeDispatch("lastMonth")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid var(--input-border)",
-              background: "transparent",
-              color: "var(--text-primary)",
-              fontSize: 11,
-            }}
-          >
-            Last month
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setQuickRangeDispatch("last90")}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid var(--input-border)",
-              background: "transparent",
-              color: "var(--text-primary)",
-              fontSize: 11,
-            }}
-          >
-            Last 90 days
-          </button>
-
-          <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.65 }}>
-            Range: <b style={{ opacity: 0.9 }}>{rangeLabel}</b>
-          </span>
-        </div>
-
-        {!dispatchFrom && !dispatchTo && (
-          <div style={{ fontSize: 11, opacity: 0.68 }}>
-            All time uses current dispatched quantities from orders, so older shipped lines still count even if they do not have dated dispatch events.
-          </div>
-        )}
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-          <span style={{ opacity: 0.8 }}>Filter by dispatch date:</span>
-
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>From</span>
-            <input
-              type="date"
-              value={dispatchFrom}
-              onChange={(e) => setDispatchFrom(e.target.value)}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px solid var(--input-border)",
-                background: "var(--surface-plain)",
-                color: "var(--text-primary)",
-                fontSize: 12,
-              }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>To</span>
-            <input
-              type="date"
-              value={dispatchTo}
-              onChange={(e) => setDispatchTo(e.target.value)}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px solid var(--input-border)",
-                background: "var(--surface-plain)",
-                color: "var(--text-primary)",
-                fontSize: 12,
-              }}
-            />
-          </div>
-
-          {(dispatchFrom || dispatchTo) && (
-            <button
-              type="button"
-              onClick={() => {
-                setDispatchFrom("");
-                setDispatchTo("");
-              }}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid var(--input-border)",
-                background: "transparent",
-                color: "var(--text-primary)",
-                fontSize: 11,
-              }}
-            >
-              Clear filter
-            </button>
-          )}
-        </div>
-      </div>
+      />
 
       <div className="stacked-sections">
-      {/* 1) CUSTOMER BAR CHART */}
-      <div className="card stacked-card">
-        <div className="card-label">Sales by Customer (Top 12)</div>
-        <div className="card-meta">
-          Dispatch-based (factory-out). Tycoon only. Excludes spares.
-        </div>
+        <SectionCard
+          label="Sales by Customer (Top 12)"
+          meta="Dispatch-based (factory-out). Tycoon only. Excludes spares."
+        >
+          {partyAggLoading ? <StatusMessage>Loading…</StatusMessage> : null}
+          {partyAggError ? <StatusMessage tone="warning">{partyAggError}</StatusMessage> : null}
 
-        {partyAggLoading && <div style={{ fontSize: 12, marginTop: 8 }}>Loading…</div>}
-        {partyAggError && (
-          <div style={{ fontSize: 12, marginTop: 8, color: "#fbbf24" }}>{partyAggError}</div>
-        )}
+          {!partyAggLoading && !partyAggError && topParties.length === 0 ? (
+            <StatusMessage>No dispatch sales found in this range.</StatusMessage>
+          ) : null}
 
-        {!partyAggLoading && !partyAggError && topParties.length === 0 && (
-          <div style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>
-            No dispatch sales found in this range.
-          </div>
-        )}
-
-        {!partyAggLoading && !partyAggError && topParties.length > 0 && (
-          <div className="chart-panel chart-panel-full">
-            <VegaLiteChart spec={partyBarSpec} height={400} />
-          </div>
-        )}
-      </div>
-
-      {/* 2) CUSTOMER LIST */}
-      <div className="card stacked-card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-          <div>
-            <div className="card-label">Customer List</div>
-            <div className="card-meta">Click a customer row to load its stats + item-wise sales below.</div>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ fontSize: 11, opacity: 0.65 }}>
-              Selected:{" "}
-              <b style={{ opacity: 0.95 }}>{selectedPartyName || "—"}</b>
+          {!partyAggLoading && !partyAggError && topParties.length > 0 ? (
+            <div className="chart-panel chart-panel-full">
+              <VegaLiteChart spec={partyBarSpec} height={400} showActions={!isMobileViewport} />
             </div>
-          </div>
-        </div>
+          ) : null}
+        </SectionCard>
 
-        <div className="table-wrapper" style={{ marginTop: 10 }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: "45%" }}>Customer</th>
-                <th>Sales (₹)</th>
-                <th>Qty (pcs)</th>
-                <th>Orders served</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!partyAggLoading && partyAgg.length === 0 && (
-                <tr>
-                  <td colSpan={4} style={{ textAlign: "center", padding: 10, fontSize: 13 }}>
-                    No customer sales found in this range.
-                  </td>
-                </tr>
-              )}
+        <SectionCard
+          label="Customer List"
+          meta="Click a customer row to load its stats + item-wise sales below."
+          action={
+            <div className="inline-meta-pill">
+              Selected: <b>{selectedPartyName || "—"}</b>
+            </div>
+          }
+          footer="Showing top 30 customers by sales value. Export CSV for the full list."
+        >
+          <ResponsiveTable
+            columns={customerColumns}
+            rows={partyAgg.slice(0, 30)}
+            rowKey={(row) => row.party_id}
+            emptyMessage="No customer sales found in this range."
+            isRowActive={(row) => row.party_id === selectedPartyId}
+            onRowClick={(row) => {
+              setSelectedPartyId(row.party_id);
+              setSelectedPartyName(row.party_name);
+            }}
+          />
+        </SectionCard>
 
-              {partyAgg.slice(0, 30).map((r) => {
-                const active = r.party_id === selectedPartyId;
-                return (
-                  <tr
-                    key={r.party_id}
-                    onClick={() => {
-                      setSelectedPartyId(r.party_id);
-                      setSelectedPartyName(r.party_name);
-                    }}
-                    style={{
-                      cursor: "pointer",
-                      background: active ? "rgba(168, 85, 247, 0.12)" : "transparent",
-                    }}
-                  >
-                    <td style={{ fontWeight: active ? 800 : 600 }}>{r.party_name}</td>
-                    <td>₹ {Math.round(r.value).toLocaleString("en-IN")}</td>
-                    <td>{Math.round(r.qty).toLocaleString("en-IN")}</td>
-                    <td>{r.ordersServed}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <SectionCard
+          label="Top Customers Over Time"
+          meta="Daily sales trend. Top 5 customers by sales value are enabled by default, and you can remove them or add others below."
+          footer="Trend charts use dated dispatch events, so older dispatches without event dates will not appear here."
+        >
+          {customerTrendOptions.length > 0 ? (
+            <div className="selector-panel">
+              <div className="selector-grid">
+                {topTrendCustomers.map((customerId) => {
+                  const option = customerTrendOptions.find((entry) => entry.customer_id === customerId);
+                  const enabled = !hiddenTopTrendCustomers.includes(customerId);
 
-        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 8 }}>
-          Showing top 30 customers by sales value. Export CSV for full list.
-        </div>
-      </div>
+                  return (
+                    <label key={customerId} className="selector-row">
+                      <input
+                        type="checkbox"
+                        className="selector-checkbox"
+                        checked={enabled}
+                        onChange={(event) => toggleTopTrendCustomer(customerId, event.target.checked)}
+                      />
+                      <span className="selector-label">{option?.customer_name || "Unknown customer"}</span>
+                    </label>
+                  );
+                })}
 
-      {/* 3) CUSTOMER TRENDS */}
-      <div className="card stacked-card">
-        <div className="card-label">Top Customers Over Time</div>
-        <div className="card-meta">
-          Daily sales trend. Top 5 customers by sales value are enabled by default, and you can remove them or add others below.
-        </div>
-
-        {customerTrendOptions.length > 0 && (
-          <div className="selector-panel">
-            <div className="selector-grid">
-              {topTrendCustomers.map((customerId) => {
-                const option = customerTrendOptions.find((entry) => entry.customer_id === customerId);
-                const enabled = !hiddenTopTrendCustomers.includes(customerId);
-
-                return (
-                  <label key={customerId} className="selector-row">
+                {customCustomerTrendSlots.map((slot, index) => (
+                  <div key={slot.id} className="selector-row">
                     <input
                       type="checkbox"
                       className="selector-checkbox"
-                      checked={enabled}
-                      onChange={(e) => toggleTopTrendCustomer(customerId, e.target.checked)}
+                      checked={slot.enabled}
+                      onChange={(event) =>
+                        updateCustomCustomerTrendSlot(slot.id, {
+                          enabled: event.target.checked && !!slot.customer_id,
+                        })
+                      }
                     />
-                    <span className="selector-label">{option?.customer_name || "Unknown customer"}</span>
-                  </label>
-                );
-              })}
-
-              {customCustomerTrendSlots.map((slot, index) => (
-                <div key={slot.id} className="selector-row">
-                  <input
-                    type="checkbox"
-                    className="selector-checkbox"
-                    checked={slot.enabled}
-                    onChange={(e) =>
-                      updateCustomCustomerTrendSlot(slot.id, {
-                        enabled: e.target.checked && !!slot.customer_id,
-                      })
-                    }
-                  />
-                  <select
-                    className="selector-select"
-                    value={slot.customer_id}
-                    onChange={(e) =>
-                      updateCustomCustomerTrendSlot(slot.id, {
-                        customer_id: e.target.value,
-                        enabled: e.target.value ? slot.enabled || true : false,
-                      })
-                    }
-                  >
-                    <option value="">Add another customer #{index + 1}</option>
-                    {customerTrendOptions.map((option) => (
-                      <option key={option.customer_id} value={option.customer_id}>
-                        {option.customer_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-
-            <div className="selector-actions">
-              <div style={{ fontSize: 11, opacity: 0.68 }}>
-                Selected: <b style={{ opacity: 0.95 }}>{activeTrendCustomerIds.length}</b>
+                    <select
+                      className="selector-select"
+                      value={slot.customer_id}
+                      onChange={(event) =>
+                        updateCustomCustomerTrendSlot(slot.id, {
+                          customer_id: event.target.value,
+                          enabled: event.target.value ? slot.enabled || true : false,
+                        })
+                      }
+                    >
+                      <option value="">Add another customer #{index + 1}</option>
+                      {customerTrendOptions.map((option) => (
+                        <option key={option.customer_id} value={option.customer_id}>
+                          {option.customer_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
 
-              <button
-                type="button"
-                onClick={resetCustomerTrendSelection}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid var(--input-border)",
-                  background: "transparent",
-                  color: "var(--text-primary)",
-                  fontSize: 11,
-                }}
-              >
-                Reset to top 5
-              </button>
+              <div className="selector-actions">
+                <div className="inline-meta-pill">
+                  Selected: <b>{activeTrendCustomerIds.length}</b>
+                </div>
+
+                <ActionButton size="sm" variant="secondary" onClick={resetCustomerTrendSelection}>
+                  Reset to top 5
+                </ActionButton>
+              </div>
             </div>
-          </div>
-        )}
+          ) : null}
 
-        {customerTrendError && (
-          <div style={{ fontSize: 12, marginTop: 8, color: "#fbbf24" }}>{customerTrendError}</div>
-        )}
+          {customerTrendError ? <StatusMessage tone="warning">{customerTrendError}</StatusMessage> : null}
 
-        {customerTrendLoading ? (
-          <div style={{ fontSize: 12, marginTop: 10 }}>Loading…</div>
-        ) : activeTrendCustomerIds.length === 0 ? (
-          <div style={{ fontSize: 12, marginTop: 10, opacity: 0.8 }}>Select at least one customer to view the trend chart.</div>
-        ) : visibleCustomerTrends.length === 0 ? (
-          <div style={{ fontSize: 12, marginTop: 10, opacity: 0.8 }}>
-            No dated customer trend data found in this range.
-          </div>
-        ) : (
-          <div className="chart-panel chart-panel-full">
-            <VegaLiteChart spec={customerTrendSpec} height={380} />
-          </div>
-        )}
-
-        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 8 }}>
-          Trend charts use dated dispatch events, so older dispatches without event dates will not appear here.
-        </div>
-      </div>
-
-      {/* 4) CUSTOMER KPI SUMMARY */}
-      <div className="card stacked-card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div>
-            <div className="card-label">
-              Customer Statistics:{" "}
-              <span style={{ opacity: 0.95 }}>{selectedPartyName || "—"}</span>
-            </div>
-            <div className="card-meta">
-              Dispatch-based · Tycoon only · excludes spares · pie excludes uncategorised.
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={downloadSelectedPartyItemsCsv}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 999,
-              border: "1px solid var(--text-primary)",
-              background: "var(--text-primary)",
-              color: "var(--nav-active-text)",
-              fontSize: 12,
-              fontWeight: 800,
-              height: 36,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Download Items CSV
-          </button>
-        </div>
-
-        {partyDetailError && (
-          <div style={{ fontSize: 12, marginTop: 8, color: "#fbbf24" }}>{partyDetailError}</div>
-        )}
-
-        {/* TOTAL SALES FIRST */}
-        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-          Total sales (selected customer):{" "}
-          <b style={{ fontSize: 16, opacity: 0.95 }}>
-            {partyDetailLoading ? "…" : `₹ ${partyTotals.value.toLocaleString("en-IN")}`}
-          </b>
-        </div>
-
-        <div className="stats-grid-wide">
-          <div className="card" style={{ padding: 12 }}>
-            <div className="card-label">Qty dispatched</div>
-            <div className="card-value" style={{ fontSize: 24 }}>
-              {partyDetailLoading ? "…" : `${partyTotals.qty} pcs`}
-            </div>
-            <div className="card-meta">In dispatch range</div>
-          </div>
-
-          <div className="card" style={{ padding: 12 }}>
-            <div className="card-label">Avg realisation / unit</div>
-            <div className="card-value" style={{ fontSize: 24 }}>
-              {partyDetailLoading ? "…" : `₹ ${partyTotals.avgRealisation.toLocaleString("en-IN")}`}
-            </div>
-            <div className="card-meta">Value ÷ qty</div>
-          </div>
-
-          <div className="card" style={{ padding: 12 }}>
-            <div className="card-label">Orders served</div>
-            <div className="card-value" style={{ fontSize: 24 }}>
-              {partyDetailLoading ? "…" : partyTotals.ordersServed}
-            </div>
-            <div className="card-meta">Unique orders with dispatch</div>
-          </div>
-
-          <div className="card" style={{ padding: 12 }}>
-            <div className="card-label">Fulfilment-to-date</div>
-            <div className="card-value" style={{ fontSize: 24 }}>
-              {partyDetailLoading ? "…" : `${partyTotals.fulfillmentPct}%`}
-            </div>
-            <div className="card-meta">On served orders</div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 10, fontSize: 11, opacity: 0.65 }}>
-          Fulfilment-to-date = (to-date dispatched ÷ ordered) across orders that had any dispatch in this range.
-        </div>
-      </div>
-
-      {/* 5) CUSTOMER CATEGORY GRAPH */}
-      <div className="card stacked-card">
-        <div className="card-label">Category-wise Sales (selected customer)</div>
-        <div className="card-meta">
-          Slice size = ₹ value · excludes spares + uncategorised.
-        </div>
-
-        <div className="chart-panel chart-panel-full">
-          {!partyDetailLoading && partyCategorySlices.length === 0 ? (
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              No category sales (after excluding uncategorised) for this customer in the selected range.
-            </div>
+          {customerTrendLoading ? (
+            <StatusMessage>Loading…</StatusMessage>
+          ) : activeTrendCustomerIds.length === 0 ? (
+            <StatusMessage>Select at least one customer to view the trend chart.</StatusMessage>
+          ) : visibleCustomerTrends.length === 0 ? (
+            <StatusMessage>No dated customer trend data found in this range.</StatusMessage>
           ) : (
-            <VegaLiteChart spec={categoryCustomerSpec} height={360} />
-          )}
-        </div>
-      </div>
-
-      {/* 6) ITEM-WISE SALES */}
-      <div className="card stacked-card">
-        <div className="card-label">Item-wise Sales (selected customer)</div>
-        <div className="card-meta">
-          Dispatch-based (factory-out) · Tycoon only · excludes spares · includes uncategorised items.
-        </div>
-
-        {partyDetailLoading && <div style={{ fontSize: 12, marginTop: 8 }}>Loading…</div>}
-
-        {!partyDetailLoading && partyItems.length === 0 && (
-          <div style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>
-            No item sales found for this customer in the selected range.
-          </div>
-        )}
-
-        {!partyDetailLoading && partyItems.length > 0 && (
-          <div className="table-wrapper" style={{ marginTop: 10 }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: "42%" }}>Item</th>
-                  <th style={{ width: "18%" }}>Category</th>
-                  <th>Sales (₹)</th>
-                  <th>Qty (pcs)</th>
-                  <th>Orders</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partyItems.slice(0, 40).map((r) => (
-                  <tr key={r.item}>
-                    <td style={{ fontWeight: 800 }}>{r.item}</td>
-                    <td style={{ opacity: 0.9 }}>{r.category}</td>
-                    <td>₹ {Math.round(r.value).toLocaleString("en-IN")}</td>
-                    <td>{Math.round(r.qty).toLocaleString("en-IN")}</td>
-                    <td>{r.ordersCount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 8 }}>
-              Showing top 40 items by sales value.
+            <div className="chart-panel chart-panel-full">
+              <VegaLiteChart
+                spec={customerTrendSpec}
+                height={isMobileViewport ? 340 : 380}
+                showActions={!isMobileViewport}
+              />
             </div>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          label={
+            <>
+              Customer Statistics: <span className="card-label-emphasis">{selectedPartyName || "—"}</span>
+            </>
+          }
+          meta="Dispatch-based · Tycoon only · excludes spares · pie excludes uncategorised."
+          action={
+            <ActionButton variant="primary" onClick={downloadSelectedPartyItemsCsv}>
+              Download Items CSV
+            </ActionButton>
+          }
+          footer="Fulfilment-to-date = (to-date dispatched ÷ ordered) across orders that had any dispatch in this range."
+        >
+          {partyDetailError ? <StatusMessage tone="warning">{partyDetailError}</StatusMessage> : null}
+
+          <div className="summary-total">
+            Total sales (selected customer):{" "}
+            <b>{partyDetailLoading ? "…" : `₹ ${partyTotals.value.toLocaleString("en-IN")}`}</b>
           </div>
-        )}
-      </div>
+
+          <div className="stats-grid-wide">
+            <MetricCard
+              label="Qty dispatched"
+              value={partyDetailLoading ? "…" : `${partyTotals.qty} pcs`}
+              meta="In dispatch range"
+            />
+            <MetricCard
+              label="Avg realisation / unit"
+              value={partyDetailLoading ? "…" : `₹ ${partyTotals.avgRealisation.toLocaleString("en-IN")}`}
+              meta="Value ÷ qty"
+            />
+            <MetricCard
+              label="Orders served"
+              value={partyDetailLoading ? "…" : partyTotals.ordersServed}
+              meta="Unique orders with dispatch"
+            />
+            <MetricCard
+              label="Fulfilment-to-date"
+              value={partyDetailLoading ? "…" : `${partyTotals.fulfillmentPct}%`}
+              meta="On served orders"
+            />
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          label="Category-wise Sales (selected customer)"
+          meta="Slice size = ₹ value · excludes spares + uncategorised."
+        >
+          <div className="chart-panel chart-panel-full">
+            {!partyDetailLoading && partyCategorySlices.length === 0 ? (
+              <StatusMessage>
+                No category sales (after excluding uncategorised) for this customer in the selected
+                range.
+              </StatusMessage>
+            ) : (
+              <VegaLiteChart spec={categoryCustomerSpec} height={360} showActions={!isMobileViewport} />
+            )}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          label="Item-wise Sales (selected customer)"
+          meta="Dispatch-based (factory-out) · Tycoon only · excludes spares · includes uncategorised items."
+          footer="Showing top 40 items by sales value."
+        >
+          {partyDetailLoading ? <StatusMessage>Loading…</StatusMessage> : null}
+
+          {!partyDetailLoading && partyItems.length === 0 ? (
+            <StatusMessage>No item sales found for this customer in the selected range.</StatusMessage>
+          ) : null}
+
+          {!partyDetailLoading && partyItems.length > 0 ? (
+            <ResponsiveTable
+              columns={itemColumns}
+              rows={partyItems.slice(0, 40)}
+              rowKey={(row) => row.item}
+              emptyMessage="No item sales found for this customer in the selected range."
+            />
+          ) : null}
+        </SectionCard>
       </div>
     </>
   );

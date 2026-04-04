@@ -1,7 +1,6 @@
 // @ts-nocheck
 "use client";
 
-import useThemeMode from "@/app/_components/useThemeMode";
 import { STATUS_OPTIONS } from "@/lib/constants/status";
 
 type Props = {
@@ -23,71 +22,19 @@ export default function OrdersFilters({
   setHideDispatched,
   onClear,
 }: Props) {
-  const themeMode = useThemeMode();
   const showClear =
     statusFilter !== "all" || fulfilmentFilter !== "all" || hideDispatched;
 
-  const uiTheme =
-    themeMode === "light"
-      ? {
-          input: {
-            padding: "4px 8px",
-            borderRadius: 999,
-            border: "1px solid var(--input-border)",
-            background: "var(--surface-plain)",
-            color: "var(--text-primary)",
-            fontSize: 11,
-          },
-          ghostButton: {
-            padding: "4px 10px",
-            borderRadius: 999,
-            border: "1px solid var(--input-border)",
-            background: "transparent",
-            color: "var(--text-primary)",
-            fontSize: 11,
-          },
-          labelColor: "var(--text-primary)",
-        }
-      : {
-          input: {
-            padding: "4px 8px",
-            borderRadius: 999,
-            border: "1px solid var(--input-border)",
-            background: "var(--surface-plain)",
-            color: "var(--text-primary)",
-            fontSize: 11,
-          },
-          ghostButton: {
-            padding: "4px 10px",
-            borderRadius: 999,
-            border: "1px solid var(--input-border)",
-            background: "transparent",
-            color: "var(--text-primary)",
-            fontSize: 11,
-          },
-          labelColor: "var(--text-primary)",
-        };
-
   return (
-    <div
-      style={{
-        marginBottom: 10,
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 10,
-        alignItems: "center",
-        fontSize: 11,
-      }}
-    >
+    <div className="filters-row" style={{ marginBottom: 10, fontSize: 11 }}>
       <span style={{ opacity: 0.75 }}>Filters:</span>
 
-      {/* Status filter */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="compact-field">
         <span style={{ opacity: 0.7 }}>Status</span>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          style={uiTheme.input}
+          className="compact-input"
         >
           <option value="all">All</option>
           {STATUS_OPTIONS.map((opt) => (
@@ -98,13 +45,12 @@ export default function OrdersFilters({
         </select>
       </div>
 
-      {/* Fulfilment filter */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="compact-field">
         <span style={{ opacity: 0.7 }}>Fulfilment</span>
         <select
           value={fulfilmentFilter}
           onChange={(e) => setFulfilmentFilter(e.target.value)}
-          style={uiTheme.input}
+          className="compact-input"
         >
           <option value="all">All</option>
           <option value="low">&lt; 40%</option>
@@ -114,15 +60,14 @@ export default function OrdersFilters({
         </select>
       </div>
 
-      {/* Hide dispatched toggle */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="compact-field">
         <label
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
             cursor: "pointer",
-            color: uiTheme.labelColor,
+            color: "var(--text-primary)",
           }}
         >
           <input
@@ -146,7 +91,7 @@ export default function OrdersFilters({
         <button
           type="button"
           onClick={onClear}
-          style={uiTheme.ghostButton}
+          className="action-button small secondary"
         >
           Clear filters
         </button>
