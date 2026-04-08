@@ -10,11 +10,17 @@ export default function FullyDispatchedBatches({
   getItemFromRel,
   getLineStats,
   formatDateShort,
+  showFinancials = true,
+  readOnly = true,
+  handleRateChange,
   variant = "screen", // "screen" | "print"
 }: any) {
   const isPrint = variant === "print";
   const themeMode = useThemeMode();
   const isLight = themeMode === "light";
+  const showRateColumn = showFinancials !== false;
+  const canEditRates =
+    !isPrint && !readOnly && showRateColumn && typeof handleRateChange === "function";
 
   const safeLines = Array.isArray(fullyDispatchedLines)
     ? fullyDispatchedLines
@@ -216,16 +222,18 @@ export default function FullyDispatchedBatches({
                   style={tableStyle}
                 >
                   <colgroup>
-                    <col style={{ width: "34%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "24%" }} />
+                    <col style={{ width: showRateColumn ? "28%" : "34%" }} />
+                    {showRateColumn && <col style={{ width: "14%" }} />}
+                    <col style={{ width: showRateColumn ? "12%" : "14%" }} />
+                    <col style={{ width: showRateColumn ? "12%" : "14%" }} />
+                    <col style={{ width: showRateColumn ? "12%" : "14%" }} />
+                    <col style={{ width: showRateColumn ? "22%" : "24%" }} />
                   </colgroup>
 
                   <thead>
                     <tr>
                       <th style={thLeft}>Item</th>
+                      {showRateColumn && <th style={thCenter}>Rate</th>}
                       <th style={thCenter}>Dispatched</th>
                       <th style={thCenter}>Ordered</th>
                       <th style={thCenter}>Pending</th>
@@ -237,6 +245,7 @@ export default function FullyDispatchedBatches({
                     {lines.map((l: any) => {
                       const item = getItemFromRel(l);
                       const { ordered, dispatched, pending } = getLineStats(l);
+                      const rate = Number(l?.dealer_rate_at_order) || 0;
                       const note =
                         typeof l?.line_remarks === "string" && l.line_remarks.trim()
                           ? l.line_remarks.trim()
@@ -245,6 +254,42 @@ export default function FullyDispatchedBatches({
                       return (
                         <tr key={l.id}>
                           <td data-label="Item" style={tdLeft}>{item?.name ?? "Unknown item"}</td>
+                          {showRateColumn && (
+                            <td data-label="Rate" style={tdCenter}>
+                              {canEditRates ? (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 6,
+                                  }}
+                                >
+                                  <span style={{ opacity: isLight ? 0.68 : 0.74 }}>₹</span>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={String(l?.dealer_rate_at_order ?? "")}
+                                    onChange={(e) =>
+                                      handleRateChange?.(l.id, e.target.value)
+                                    }
+                                    style={{
+                                      width: 84,
+                                      textAlign: "right",
+                                      padding: "6px 10px",
+                                      borderRadius: 999,
+                                      border: `1px solid ${isLight ? "rgba(23,23,23,0.16)" : "rgba(255,255,255,0.16)"}`,
+                                      background: isLight ? "#ffffff" : "rgba(2,6,23,0.82)",
+                                      color: isLight ? "#171717" : "#f5f5f5",
+                                      fontSize: 12,
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                `₹ ${rate.toLocaleString("en-IN")}`
+                              )}
+                            </td>
+                          )}
                           <td data-label="Dispatched" style={tdCenter}>{dispatched} pcs</td>
                           <td data-label="Ordered" style={tdCenter}>{ordered} pcs</td>
                           <td data-label="Pending" style={tdCenter}>{pending} pcs</td>

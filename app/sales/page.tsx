@@ -155,6 +155,7 @@ type PartyItemRow = {
   category: string;
   qty: number;
   value: number;
+  avgRealisation: number;
   ordersCount: number;
 };
 
@@ -721,6 +722,7 @@ export default function SalesPage() {
         category: agg.category || "Uncategorised",
         qty: agg.qty,
         value: agg.value,
+        avgRealisation: agg.qty > 0 ? Math.round(agg.value / agg.qty) : 0,
         ordersCount: agg.orders.size,
       }))
       .sort((a, b) => b.value - a.value);
@@ -877,8 +879,8 @@ export default function SalesPage() {
       alert("No item data to export.");
       return;
     }
-    const header = ["Item", "Category", "SalesValue", "QtyPcs", "OrdersCount"];
-    const rows = partyItems.map((r) => [r.item, r.category, r.value, r.qty, r.ordersCount]);
+    const header = ["Item", "Category", "SalesValue", "QtyPcs", "AvgRealisation", "OrdersCount"];
+    const rows = partyItems.map((r) => [r.item, r.category, r.value, r.qty, r.avgRealisation, r.ordersCount]);
     const fname = `tycoon-${(selectedPartyName || "customer").toLowerCase().replace(/\s+/g, "-")}-items.csv`;
     downloadCsv(fname, header, rows);
   }
@@ -1211,6 +1213,12 @@ export default function SalesPage() {
       header: "Qty (pcs)",
       mobileLabel: "Qty",
       render: (row: PartyItemRow) => Math.round(row.qty).toLocaleString("en-IN"),
+    },
+    {
+      key: "avgRealisation",
+      header: "Avg / Unit",
+      mobileLabel: "Avg / Unit",
+      render: (row: PartyItemRow) => `₹ ${Math.round(row.avgRealisation).toLocaleString("en-IN")}`,
     },
     {
       key: "ordersCount",

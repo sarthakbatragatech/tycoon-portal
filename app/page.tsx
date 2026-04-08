@@ -1185,7 +1185,7 @@ export default function DashboardPage() {
       alert("No sales item data to export.");
       return;
     }
-    const header = "Item,Category,Qty,Value\n";
+    const header = "Item,Category,Qty,Value,AvgRealisation\n";
     const lines = rows
       .map((r) =>
         [
@@ -1193,6 +1193,7 @@ export default function DashboardPage() {
           `"${String(r.category ?? "").replace(/"/g, '""')}"`,
           r.qty ?? 0,
           r.value ?? 0,
+          Math.round((r.value || 0) / Math.max(r.qty || 0, 1)),
         ].join(",")
       )
       .join("\n");

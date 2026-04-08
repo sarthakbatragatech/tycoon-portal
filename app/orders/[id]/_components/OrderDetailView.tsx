@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import useThemeMode from "@/app/_components/useThemeMode";
 import ActivityLogCard from "./ActivityLogCard";
 import FullyDispatchedBatches from "./FullyDispatchedBatches";
 import { STATUS_LABELS, STATUS_OPTIONS } from "@/lib/constants/status";
@@ -41,6 +42,9 @@ export default function OrderDetailView(props: any) {
     handleDispatchedTodayChange: handleDispatchedNowChange,
 
     handleNoteChange,
+    handleRateChange,
+    undoingDispatchEventId,
+    undoDispatchEvent,
     savingDispatch,
 
     // client sends "saveDispatchAndNotes" -> view uses "saveDispatch"
@@ -52,12 +56,16 @@ export default function OrderDetailView(props: any) {
     setAddingLine,
     newLineItemId,
     setNewLineItemId,
+    newLineRate,
+    setNewLineRate,
     newLineQty,
     setNewLineQty,
     newLineNote,
     setNewLineNote,
     savingNewLine,
+    handleNewLineItemChange,
     handleNewLineQtyChange,
+    handleNewLineRateChange,
 
     // client sends "addNewLine" -> view uses "saveNewLine"
     addNewLine: saveNewLine,
@@ -77,6 +85,8 @@ export default function OrderDetailView(props: any) {
     canSeeFinancials = true,
   } = props;
 
+  const themeMode = useThemeMode();
+  const isLight = themeMode === "light";
   const lines = Array.isArray(order?.order_lines) ? order.order_lines : [];
 
   // ---------- helpers ----------
@@ -108,6 +118,25 @@ export default function OrderDetailView(props: any) {
     return ordered > 0 && dispatched === ordered && pending === 0;
   });
 
+  const dispatchHistoryRows = (Array.isArray(dispatchEvents) ? [...dispatchEvents] : [])
+    .map((event: any, index: number) => {
+      const line = lines.find((candidate: any) => candidate.id === event?.order_line_id);
+      const item = getItemFromRel(line);
+      return {
+        id: event?.id || `${event?.order_line_id || "line"}-${event?.dispatched_at || "date"}-${index}`,
+        rawId: event?.id || null,
+        itemName: item?.name || "Unknown item",
+        dispatchedQty: Number(event?.dispatched_qty ?? 0) || 0,
+        dispatchedAt: event?.dispatched_at || "",
+        createdAt: event?.created_at || "",
+      };
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.createdAt || a.dispatchedAt || 0).getTime();
+      const bTime = new Date(b.createdAt || b.dispatchedAt || 0).getTime();
+      return bTime - aTime;
+    });
+
   // ---------- totals ----------
   const totalOrdered = lines.reduce(
     (s: number, l: any) => s + (Number(l?.qty) || 0),
@@ -130,6 +159,16 @@ export default function OrderDetailView(props: any) {
 
   const fulfillmentPercent =
     totalOrdered > 0 ? Math.round((totalDispatched / totalOrdered) * 100) : 0;
+  const fulfillmentBarColor =
+    fulfillmentPercent >= 100
+      ? "#16a34a"
+      : fulfillmentPercent >= 75
+      ? "#0ea5e9"
+      : fulfillmentPercent >= 40
+      ? "#f59e0b"
+      : fulfillmentPercent > 0
+      ? "#f97316"
+      : "var(--input-border)";
 
   const money = new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -284,12 +323,17 @@ export default function OrderDetailView(props: any) {
                       style={{
                         padding: "4px 10px",
                         borderRadius: 999,
-                        border: "1px solid #f5f5f5",
-                        background: savingStatus ? "#111827" : "#f5f5f5",
-                        color: savingStatus ? "#9ca3af" : "#000",
+                        border: savingStatus
+                          ? "1px solid var(--input-border)"
+                          : "1px solid var(--pill-border)",
+                        background: "var(--surface-elevated)",
+                        color: savingStatus
+                          ? "var(--text-secondary)"
+                          : "var(--text-primary)",
                         fontSize: 11,
                         cursor: savingStatus ? "default" : "pointer",
-                        fontWeight: 700,
+                        fontWeight: 800,
+                        opacity: savingStatus ? 0.72 : 1,
                       }}
                     >
                       {savingStatus ? "Saving…" : "Save"}
@@ -386,12 +430,17 @@ export default function OrderDetailView(props: any) {
                     style={{
                       padding: "4px 10px",
                       borderRadius: 999,
-                      border: "1px solid #f5f5f5",
-                      background: savingExpectedDate ? "#111827" : "#f5f5f5",
-                      color: savingExpectedDate ? "#9ca3af" : "#000",
+                      border: savingExpectedDate
+                        ? "1px solid var(--input-border)"
+                        : "1px solid var(--pill-border)",
+                      background: "var(--surface-elevated)",
+                      color: savingExpectedDate
+                        ? "var(--text-secondary)"
+                        : "var(--text-primary)",
                       fontSize: 11,
                       cursor: savingExpectedDate ? "default" : "pointer",
-                      fontWeight: 700,
+                      fontWeight: 800,
+                      opacity: savingExpectedDate ? 0.72 : 1,
                     }}
                   >
                     {savingExpectedDate ? "Saving…" : "Save"}
@@ -423,9 +472,10 @@ export default function OrderDetailView(props: any) {
               <div
                 style={{
                   width: "100%",
-                  height: 6,
+                  height: 10,
                   borderRadius: 999,
-                  background: "#151515",
+                  border: "1px solid var(--input-border)",
+                  background: "var(--surface-elevated)",
                   overflow: "hidden",
                 }}
               >
@@ -434,12 +484,21 @@ export default function OrderDetailView(props: any) {
                     width: `${fulfillmentPercent}%`,
                     height: "100%",
                     borderRadius: 999,
-                    background: "#f5f5f5",
+                    minWidth: fulfillmentPercent > 0 ? 10 : 0,
+                    background: fulfillmentBarColor,
                     transition: "width 0.2s ease-out",
                   }}
                 />
               </div>
-              <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  marginTop: 6,
+                  opacity: 0.84,
+                  color: fulfillmentPercent > 0 ? fulfillmentBarColor : "var(--text-secondary)",
+                  fontWeight: 700,
+                }}
+              >
                 {fulfillmentPercent}% fulfilled
               </div>
             </div>
@@ -494,12 +553,17 @@ export default function OrderDetailView(props: any) {
                   style={{
                     padding: "4px 10px",
                     borderRadius: 999,
-                    border: "1px solid #f5f5f5",
-                    background: savingRemarks ? "#111827" : "#f5f5f5",
-                    color: savingRemarks ? "#9ca3af" : "#000",
+                    border: savingRemarks
+                      ? "1px solid var(--input-border)"
+                      : "1px solid var(--pill-border)",
+                    background: "var(--surface-elevated)",
+                    color: savingRemarks
+                      ? "var(--text-secondary)"
+                      : "var(--text-primary)",
                     cursor: savingRemarks ? "default" : "pointer",
                     fontWeight: 800,
                     fontSize: 11,
+                    opacity: savingRemarks ? 0.72 : 1,
                   }}
                 >
                   {savingRemarks ? "Saving…" : "Save remarks"}
@@ -521,16 +585,20 @@ export default function OrderDetailView(props: any) {
             <span style={{ opacity: 0.8 }}>
               {readOnly
                 ? "Dispatch quantities and notes are locked in view-only mode."
-                : 'Enter "Dispatched Today" quantities for the date shown on the right.'}
+                : 'Adjust rates, notes, or "Dispatched Today" quantities for the date shown on the right.'}
             </span>
 
             <div
               className="detail-dispatch-halo"
               style={{
                 border: "1px solid #38bdf8",
-                boxShadow: "0 0 0 1px rgba(56,189,248,0.35)",
+                boxShadow: isLight
+                  ? "0 0 0 1px rgba(56,189,248,0.22)"
+                  : "0 0 0 1px rgba(56,189,248,0.35)",
                 background:
-                  "radial-gradient(circle at top left, rgba(56,189,248,0.18), #020617)",
+                  isLight
+                    ? "linear-gradient(135deg, rgba(224,242,254,0.96), rgba(186,230,253,0.82) 60%, rgba(125,211,252,0.74))"
+                    : "radial-gradient(circle at top left, rgba(56,189,248,0.18), #020617)",
                 }}
               >
                 <span
@@ -538,7 +606,7 @@ export default function OrderDetailView(props: any) {
                   fontSize: 11,
                   textTransform: "uppercase",
                   letterSpacing: 0.8,
-                  color: "#e0f2fe",
+                  color: isLight ? "#0f3b53" : "#e0f2fe",
                   fontWeight: 800,
                 }}
                 >
@@ -546,7 +614,7 @@ export default function OrderDetailView(props: any) {
                 </span>
 
               {readOnly ? (
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#f9fafb" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: isLight ? "#082f49" : "#f9fafb" }}>
                   Locked
                 </span>
               ) : (
@@ -630,7 +698,38 @@ export default function OrderDetailView(props: any) {
 
                       {showFinancials && (
                         <td data-label="Rate" style={{ ...tdBase, textAlign: "center", opacity: 0.9 }}>
-                          ₹ {rate.toLocaleString("en-IN")}
+                          {readOnly ? (
+                            `₹ ${rate.toLocaleString("en-IN")}`
+                          ) : (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <span style={{ opacity: 0.72 }}>₹</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={String(l?.dealer_rate_at_order ?? "")}
+                                onChange={(e) =>
+                                  handleRateChange?.(l.id, e.target.value)
+                                }
+                                style={{
+                                  width: 84,
+                                  textAlign: "right",
+                                  padding: "6px 10px",
+                                  borderRadius: 999,
+                                  border: "1px solid #333",
+                                  background: "#050505",
+                                  color: "#f5f5f5",
+                                  fontSize: 12,
+                                }}
+                              />
+                            </div>
+                          )}
                         </td>
                       )}
 
@@ -752,14 +851,14 @@ export default function OrderDetailView(props: any) {
                 disabled={!!savingDispatch}
                 style={{
                   background: savingDispatch ? "#14532d" : "#22c55e",
-                  borderColor: savingDispatch ? "#14532d" : "#22c55e",
+                  borderColor: savingDispatch ? "#14532d" : "#166534",
                   color: "#000",
                   fontWeight: 900,
                   opacity: savingDispatch ? 0.75 : 1,
                   cursor: savingDispatch ? "default" : "pointer",
                 }}
               >
-                {savingDispatch ? "Saving…" : "Save dispatch quantities & notes"}
+                {savingDispatch ? "Saving…" : "Save line changes & dispatch"}
               </button>
 
               {!addingLine && (
@@ -769,7 +868,7 @@ export default function OrderDetailView(props: any) {
                   style={{
                     padding: "6px 14px",
                     borderRadius: 999,
-                    border: "1px solid #22c55e",
+                    border: "1px solid #166534",
                     background: "#22c55e",
                     color: "#000",
                     fontSize: 12,
@@ -788,7 +887,7 @@ export default function OrderDetailView(props: any) {
 
               <select
                 value={newLineItemId || ""}
-                onChange={(e) => setNewLineItemId?.(e.target.value)}
+                onChange={(e) => handleNewLineItemChange?.(e.target.value)}
                 style={{
                   minWidth: 180,
                   padding: "4px 8px",
@@ -805,6 +904,22 @@ export default function OrderDetailView(props: any) {
                   </option>
                 ))}
               </select>
+
+              <input
+                type="text"
+                inputMode="decimal"
+                value={newLineRate || ""}
+                onChange={(e) => handleNewLineRateChange?.(e.target.value)}
+                placeholder="Rate"
+                style={{
+                  width: 92,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "#050505",
+                  color: "#f5f5f5",
+                }}
+              />
 
               <input
                 type="text"
@@ -846,11 +961,16 @@ export default function OrderDetailView(props: any) {
                 style={{
                   padding: "4px 10px",
                   borderRadius: 999,
-                  border: "1px solid #fff",
-                  background: savingNewLine ? "#111827" : "#f5f5f5",
-                  color: savingNewLine ? "#9ca3af" : "#000",
+                  border: savingNewLine
+                    ? "1px solid var(--input-border)"
+                    : "1px solid var(--pill-border)",
+                  background: "var(--surface-elevated)",
+                  color: savingNewLine
+                    ? "var(--text-secondary)"
+                    : "var(--text-primary)",
                   cursor: savingNewLine ? "default" : "pointer",
-                  fontWeight: 900,
+                  fontWeight: 800,
+                  opacity: savingNewLine ? 0.72 : 1,
                 }}
               >
                 {savingNewLine ? "Adding…" : "Save line"}
@@ -862,14 +982,15 @@ export default function OrderDetailView(props: any) {
                   setAddingLine?.(false);
                   setNewLineItemId?.("");
                   setNewLineQty?.("");
+                  setNewLineRate?.("");
                   setNewLineNote?.("");
                 }}
                 style={{
                   padding: "4px 10px",
                   borderRadius: 999,
-                  border: "1px solid #333",
-                  background: "transparent",
-                  color: "#f5f5f5",
+                  border: "1px solid var(--input-border)",
+                  background: "var(--surface-elevated)",
+                  color: "var(--text-primary)",
                   fontWeight: 800,
                 }}
               >
@@ -887,8 +1008,97 @@ export default function OrderDetailView(props: any) {
             getItemFromRel={getItemFromRel}
             getLineStats={getLineStats}
             formatDateShort={formatDateShort}
+            showFinancials={showFinancials}
+            readOnly={readOnly}
+            handleRateChange={handleRateChange}
             variant="screen"
           />
+
+          {dispatchHistoryRows.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <div
+                style={{
+                  marginTop: 6,
+                  marginBottom: 8,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  opacity: 0.9,
+                }}
+              >
+                Dispatch history
+              </div>
+
+              {!readOnly && (
+                <div style={{ fontSize: 12, opacity: 0.72, marginBottom: 8 }}>
+                  Undo removes that dispatch entry so you can re-enter the correct date or quantity.
+                </div>
+              )}
+
+              <div className="table-wrapper" style={{ marginTop: 4 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Recorded</th>
+                      {!readOnly && <th />}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {dispatchHistoryRows.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{entry.dispatchedAt ? formatDateShort(entry.dispatchedAt) : "Not set"}</td>
+                        <td>{entry.itemName}</td>
+                        <td>{entry.dispatchedQty} pcs</td>
+                        <td>
+                          {entry.createdAt
+                            ? new Date(entry.createdAt).toLocaleString("en-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—"}
+                        </td>
+                        {!readOnly && (
+                          <td style={{ textAlign: "right" }}>
+                            <button
+                              type="button"
+                              onClick={() => undoDispatchEvent?.(entry.rawId)}
+                              disabled={!entry.rawId || undoingDispatchEventId === entry.rawId}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #ef4444",
+                                background:
+                                  undoingDispatchEventId === entry.rawId
+                                    ? "rgba(127, 29, 29, 0.9)"
+                                    : "rgba(239, 68, 68, 0.12)",
+                                color: undoingDispatchEventId === entry.rawId ? "#fecaca" : "#dc2626",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor:
+                                  !entry.rawId || undoingDispatchEventId === entry.rawId
+                                    ? "default"
+                                    : "pointer",
+                                opacity: !entry.rawId ? 0.55 : 1,
+                              }}
+                            >
+                              {undoingDispatchEventId === entry.rawId ? "Undoing…" : "Undo"}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ACTIONS */}
@@ -1159,7 +1369,14 @@ export default function OrderDetailView(props: any) {
         >
           <thead>
             <tr style={{ background: "#f3f4f6" }}>
-              {["Item", "Ordered", "Dispatched", "Pending", "Notes"].map((h) => (
+              {[
+                "Item",
+                ...(showFinancials ? ["Rate"] : []),
+                "Ordered",
+                "Dispatched",
+                "Pending",
+                "Notes",
+              ].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -1183,6 +1400,7 @@ export default function OrderDetailView(props: any) {
             {(pendingLines || []).map((l: any, idx: number) => {
               const item = getItemFromRel(l);
               const { ordered, dispatched, pending } = getLineStats(l);
+              const rate = Number(l?.dealer_rate_at_order) || 0;
               const note = (l?.line_remarks ?? "").trim();
 
               return (
@@ -1199,6 +1417,17 @@ export default function OrderDetailView(props: any) {
                   >
                     {item?.name ?? "Unknown item"}
                   </td>
+                  {showFinancials && (
+                    <td
+                      style={{
+                        padding: "9px 10px",
+                        borderBottom: "1px solid #f1f5f9",
+                        textAlign: "center",
+                      }}
+                    >
+                      ₹ {rate.toLocaleString("en-IN")}
+                    </td>
+                  )}
                   <td
                     style={{
                       padding: "9px 10px",
@@ -1245,7 +1474,7 @@ export default function OrderDetailView(props: any) {
             {(pendingLines || []).length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={showFinancials ? 6 : 5}
                   style={{
                     padding: 12,
                     textAlign: "center",
@@ -1273,6 +1502,7 @@ export default function OrderDetailView(props: any) {
                 getItemFromRel={getItemFromRel}
                 getLineStats={getLineStats}
                 formatDateShort={formatDateShort}
+                showFinancials={showFinancials}
                 variant="print"
               />
             </div>

@@ -417,9 +417,10 @@ export default function PunchOrderClient() {
                     style={{
                       padding: "4px 10px",
                       borderRadius: 999,
-                      border: "1px solid #333",
-                      background: "transparent",
-                      color: "#aaa",
+                      border: "1px solid #ef4444",
+                      background: "rgba(239, 68, 68, 0.12)",
+                      color: "#dc2626",
+                      fontWeight: 900,
                     }}
                   >
                     ✕

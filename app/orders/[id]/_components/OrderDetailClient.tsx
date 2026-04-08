@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { STATUS_COLORS, STATUS_LABELS, STATUS_OPTIONS } from "@/lib/constants/status";
+import { STATUS_COLORS, STATUS_LABELS } from "@/lib/constants/status";
 import { getTodayISO } from "@/lib/utils/date";
 
 import OrderDetailView from "./OrderDetailView";
@@ -36,12 +36,14 @@ export default function OrderDetailClient() {
 
   const [dispatchDate, setDispatchDate] = useState(getTodayISO());
   const [dispatchedToday, setDispatchedToday] = useState<Record<string, string>>({});
+  const [undoingDispatchEventId, setUndoingDispatchEventId] = useState<string | null>(null);
 
   // Add new line
   const [items, setItems] = useState<any[]>([]);
   const [addingLine, setAddingLine] = useState(false);
   const [newLineItemId, setNewLineItemId] = useState("");
   const [newLineQty, setNewLineQty] = useState("");
+  const [newLineRate, setNewLineRate] = useState("");
   const [newLineNote, setNewLineNote] = useState("");
   const [savingNewLine, setSavingNewLine] = useState(false);
 
@@ -136,9 +138,9 @@ export default function OrderDetailClient() {
   async function loadDispatchEvents() {
     const { data, error } = await supabase
       .from("dispatch_events")
-      .select("order_line_id, dispatched_qty, dispatched_at")
+      .select("id, order_line_id, dispatched_qty, dispatched_at, created_at")
       .eq("order_id", orderId)
-      .order("dispatched_at", { ascending: true });
+      .order("created_at", { ascending: true });
 
     if (error) {
       console.error("Error loading dispatch events", error);
@@ -161,6 +163,60 @@ export default function OrderDetailClient() {
     return Number.isNaN(n) ? 0 : n;
   }
 
+  function sanitizeRateInput(value: any) {
+    const raw = String(value ?? "").replace(/[^\d.]/g, "");
+    const firstDotIndex = raw.indexOf(".");
+    if (firstDotIndex < 0) return raw;
+
+    return (
+      raw.slice(0, firstDotIndex + 1) +
+      raw.slice(firstDotIndex + 1).replace(/\./g, "")
+    );
+  }
+
+  function formatRateLabel(value: any) {
+    return `₹ ${safeNumber(value).toLocaleString("en-IN")}`;
+  }
+
+  function calculateLineTotal(qty: any, rate: any) {
+    return safeNumber(qty) * safeNumber(rate);
+  }
+
+  function buildOrderHeaderTotals(nextLines: any[]) {
+    return (Array.isArray(nextLines) ? nextLines : []).reduce(
+      (acc, line) => {
+        const qty = safeNumber(line?.qty);
+        const lineTotal =
+          typeof line?.line_total === "number"
+            ? line.line_total
+            : calculateLineTotal(qty, line?.dealer_rate_at_order);
+
+        acc.total_qty += qty;
+        acc.total_value += safeNumber(lineTotal);
+        return acc;
+      },
+      { total_qty: 0, total_value: 0 }
+    );
+  }
+
+  async function syncOrderHeaderTotals(nextLines: any[]) {
+    if (!order?.id) return null;
+
+    const totals = buildOrderHeaderTotals(nextLines);
+    const { error } = await supabase
+      .from("orders")
+      .update(totals)
+      .eq("id", order.id);
+
+    if (error) {
+      console.error("Error syncing order header totals", error);
+      return error.message;
+    }
+
+    setOrder((prev: any) => (prev ? { ...prev, ...totals } : prev));
+    return null;
+  }
+
   function getLineStats(line: any) {
     const ordered = safeNumber(line?.qty) || 0;
 
@@ -172,11 +228,54 @@ export default function OrderDetailClient() {
     return { ordered, dispatched, pending };
   }
 
+  function deriveDispatchStatus(nextLines: any[], currentStatus: string) {
+    const lines = Array.isArray(nextLines) ? nextLines : [];
+
+    const totalOrdered = lines.reduce((sum: number, line: any) => {
+      return sum + safeNumber(line?.qty);
+    }, 0);
+
+    const totalDispatched = lines.reduce((sum: number, line: any) => {
+      const ordered = safeNumber(line?.qty);
+      let dispatched = safeNumber(line?.dispatched_qty);
+      if (dispatched < 0) dispatched = 0;
+      if (dispatched > ordered) dispatched = ordered;
+      return sum + dispatched;
+    }, 0);
+
+    if (totalOrdered > 0 && totalDispatched >= totalOrdered) {
+      return "dispatched";
+    }
+
+    if (totalDispatched > 0) {
+      return ["submitted", "pending", "in_production", "packed", "partially_dispatched", "dispatched"].includes(
+        currentStatus || "pending"
+      )
+        ? "partially_dispatched"
+        : currentStatus || "pending";
+    }
+
+    if (["partially_dispatched", "dispatched"].includes(currentStatus || "")) {
+      return "pending";
+    }
+
+    return currentStatus || "pending";
+  }
+
+  function formatDispatchLogDate(value: string) {
+    if (!value) return "Unknown date";
+    return new Date(value).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "2-digit",
+    });
+  }
+
   // ---------- UI handlers ----------
   function handleDispatchedTodayChange(lineId: string, value: string) {
     if (!order) return;
 
-    let cleaned = String(value ?? "").replace(/[^\d]/g, "");
+    const cleaned = String(value ?? "").replace(/[^\d]/g, "");
     if (cleaned === "") {
       setDispatchedToday((prev) => ({ ...prev, [lineId]: "" }));
       return;
@@ -204,6 +303,27 @@ export default function OrderDetailClient() {
     });
   }
 
+  function handleRateChange(lineId: string, value: string) {
+    const cleaned = sanitizeRateInput(value);
+
+    setOrder((prev: any) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        order_lines: (prev.order_lines || []).map((l: any) =>
+          l.id === lineId
+            ? {
+                ...l,
+                dealer_rate_at_order: cleaned,
+                line_total: cleaned === "" ? 0 : calculateLineTotal(l.qty, cleaned),
+              }
+            : l
+        ),
+      };
+    });
+  }
+
   function handleStatusChange(value: string) {
     if (!order) return;
     setOrder({ ...order, status: value });
@@ -216,6 +336,22 @@ export default function OrderDetailClient() {
     const num = parseInt(cleaned, 10);
     if (Number.isNaN(num) || num <= 0) return setNewLineQty("");
     setNewLineQty(String(num));
+  }
+
+  function handleNewLineItemChange(value: string) {
+    setNewLineItemId(value);
+
+    const item = items.find((i) => i.id === value);
+    const defaultRate =
+      item?.dealer_rate !== null && item?.dealer_rate !== undefined
+        ? String(item.dealer_rate)
+        : "";
+
+    setNewLineRate(defaultRate);
+  }
+
+  function handleNewLineRateChange(value: string) {
+    setNewLineRate(sanitizeRateInput(value));
   }
 
   // ---------- save: remarks ----------
@@ -316,12 +452,13 @@ export default function OrderDetailClient() {
         dispatched_at: string;
       }[] = [];
 
-      const lineUpdates: { id: string; dispatched_qty: number; line_remarks: string | null }[] = [];
-
-      let totalOrdered = 0;
-      let totalDispatchedAfter = 0;
-      let anyDispatched = false;
-      let allFull = true;
+      const lineUpdates: {
+        id: string;
+        dispatched_qty: number;
+        dealer_rate_at_order: number;
+        line_total: number;
+        line_remarks: string | null;
+      }[] = [];
 
       for (const l of lines) {
         const lineId = l.id as string;
@@ -344,8 +481,23 @@ export default function OrderDetailClient() {
         const newNoteStr = typeof l.line_remarks === "string" ? l.line_remarks.trim() : "";
         const newNote = newNoteStr === "" ? null : newNoteStr;
 
+        const rateRaw = sanitizeRateInput(l?.dealer_rate_at_order ?? "");
+        if (rateRaw === "") {
+          alert(`Line "${itemName}": please enter a rate before saving.`);
+          return;
+        }
+
+        const rateNum = Number(rateRaw);
+        if (Number.isNaN(rateNum) || rateNum < 0) {
+          alert(`Line "${itemName}": please enter a valid rate.`);
+          return;
+        }
+
+        const nextLineTotal = calculateLineTotal(ordered, rateNum);
+
         const orig = originalLines.find((ol: any) => ol.id === lineId) || {};
         const origDisp = safeNumber(orig.dispatched_qty);
+        const origRate = safeNumber(orig.dealer_rate_at_order);
         const origNoteStr = typeof orig.line_remarks === "string" ? orig.line_remarks.trim() : "";
         const origNote = origNoteStr === "" ? null : origNoteStr;
 
@@ -370,14 +522,24 @@ export default function OrderDetailClient() {
         }
 
         const dispatchChanged = newTotalDispatched !== origDisp;
+        const rateChanged = rateNum !== origRate;
         const noteChanged = (origNote || null) !== (newNote || null);
 
-        if (dispatchChanged || noteChanged) {
+        if (dispatchChanged || noteChanged || rateChanged) {
           lineUpdates.push({
             id: lineId,
             dispatched_qty: newTotalDispatched,
+            dealer_rate_at_order: rateNum,
+            line_total: nextLineTotal,
             line_remarks: newNote,
           });
+
+          if (rateChanged) {
+            logsToInsert.push({
+              order_id: order.id,
+              message: `Updated rate for ${itemName}: ${formatRateLabel(origRate)} → ${formatRateLabel(rateNum)}`,
+            });
+          }
 
           if (noteChanged) {
             logsToInsert.push({
@@ -387,10 +549,6 @@ export default function OrderDetailClient() {
           }
         }
 
-        totalOrdered += ordered;
-        totalDispatchedAfter += newTotalDispatched;
-        if (newTotalDispatched > 0) anyDispatched = true;
-        if (newTotalDispatched < ordered) allFull = false;
       }
 
       if (dispatchEventsToInsert.length > 0) {
@@ -405,7 +563,12 @@ export default function OrderDetailClient() {
       for (const u of lineUpdates) {
         const { error } = await supabase
           .from("order_lines")
-          .update({ dispatched_qty: u.dispatched_qty, line_remarks: u.line_remarks })
+          .update({
+            dispatched_qty: u.dispatched_qty,
+            dealer_rate_at_order: u.dealer_rate_at_order,
+            line_total: u.line_total,
+            line_remarks: u.line_remarks,
+          })
           .eq("id", u.id);
 
         if (error) {
@@ -417,12 +580,16 @@ export default function OrderDetailClient() {
 
       // auto status update
       const prevStatus = originalStatus || order.status || "pending";
-      let newStatus = order.status || "pending";
-
-      if (totalOrdered > 0 && allFull) newStatus = "dispatched";
-      else if (anyDispatched) {
-        if (["pending", "in_production", "packed"].includes(newStatus)) newStatus = "partially_dispatched";
-      }
+      const nextLines = lines.map((line: any) => {
+        const updated = lineUpdates.find((candidate) => candidate.id === line.id);
+        return updated
+          ? {
+              ...line,
+              dispatched_qty: updated.dispatched_qty,
+            }
+          : line;
+      });
+      const newStatus = deriveDispatchStatus(nextLines, order.status || "pending");
 
       if (newStatus !== order.status) {
         const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", order.id);
@@ -438,7 +605,14 @@ export default function OrderDetailClient() {
         await supabase.from("order_logs").insert(logsToInsert);
       }
 
-      alert("Dispatch and notes updated.");
+      const totalsSyncError = await syncOrderHeaderTotals(lines);
+
+      if (totalsSyncError) {
+        alert(`Rates, dispatch, and notes were saved, but order totals could not be refreshed: ${totalsSyncError}`);
+      } else {
+        alert("Rates, dispatch, and notes updated.");
+      }
+
       await loadOrder();
       await loadLogs();
       await loadDispatchEvents();
@@ -471,9 +645,108 @@ export default function OrderDetailClient() {
       { order_id: order.id, message: `Deleted line item: ${itemName} (${qty} pcs)` },
     ]);
 
+    const totalsSyncError = await syncOrderHeaderTotals(
+      (order.order_lines || []).filter((existingLine: any) => existingLine.id !== line.id)
+    );
+
+    if (totalsSyncError) {
+      alert(`Line deleted, but order totals could not be refreshed: ${totalsSyncError}`);
+    }
+
     await loadOrder();
     await loadLogs();
     await loadDispatchEvents();
+  }
+
+  async function undoDispatchEvent(eventId: string) {
+    if (!order) return;
+
+    const event = (dispatchEvents || []).find((entry: any) => entry.id === eventId);
+    if (!event) return;
+
+    const line = (order.order_lines || []).find((entry: any) => entry.id === event.order_line_id);
+    if (!line) {
+      alert("Could not find the order line for this dispatch entry.");
+      return;
+    }
+
+    const itemName = getItemName(line);
+    const qty = safeNumber(event.dispatched_qty);
+    const dispatchDateLabel = formatDispatchLogDate(event.dispatched_at);
+
+    if (!confirm(`Undo dispatch of ${qty} pcs for ${itemName} on ${dispatchDateLabel}?`)) return;
+
+    setUndoingDispatchEventId(eventId);
+
+    try {
+      const remainingEvents = (dispatchEvents || []).filter((entry: any) => entry.id !== eventId);
+      const remainingQty = remainingEvents
+        .filter((entry: any) => entry.order_line_id === event.order_line_id)
+        .reduce((sum: number, entry: any) => sum + safeNumber(entry.dispatched_qty), 0);
+
+      const { error: deleteError } = await supabase.from("dispatch_events").delete().eq("id", eventId);
+      if (deleteError) {
+        console.error(deleteError);
+        alert("Could not undo dispatch entry: " + deleteError.message);
+        return;
+      }
+
+      const nextDispatchedQty = Math.min(safeNumber(line.qty), Math.max(remainingQty, 0));
+
+      const { error: lineError } = await supabase
+        .from("order_lines")
+        .update({ dispatched_qty: nextDispatchedQty })
+        .eq("id", event.order_line_id);
+
+      if (lineError) {
+        console.error(lineError);
+        alert("Dispatch entry was removed, but the line total could not be refreshed: " + lineError.message);
+        return;
+      }
+
+      const nextLines = (order.order_lines || []).map((entry: any) =>
+        entry.id === event.order_line_id ? { ...entry, dispatched_qty: nextDispatchedQty } : entry
+      );
+
+      const prevStatus = order.status || "pending";
+      const nextStatus = deriveDispatchStatus(nextLines, prevStatus);
+
+      if (nextStatus !== prevStatus) {
+        const { error: statusError } = await supabase
+          .from("orders")
+          .update({ status: nextStatus })
+          .eq("id", order.id);
+
+        if (statusError) {
+          console.error(statusError);
+          alert("Dispatch entry was removed, but the order status could not be updated: " + statusError.message);
+          return;
+        }
+      }
+
+      const logsToInsert = [
+        {
+          order_id: order.id,
+          message: `Undid dispatch entry: ${qty} pcs of ${itemName} dated ${dispatchDateLabel}.`,
+        },
+      ];
+
+      if (nextStatus !== prevStatus) {
+        logsToInsert.push({
+          order_id: order.id,
+          message: `Status changed: ${prevStatus} → ${nextStatus}`,
+        });
+      }
+
+      await supabase.from("order_logs").insert(logsToInsert);
+
+      alert("Dispatch entry undone.");
+      await loadOrder();
+      await loadLogs();
+      await loadDispatchEvents();
+    } finally {
+      setUndoingDispatchEventId(null);
+    }
   }
 
   // ---------- add new line ----------
@@ -482,12 +755,17 @@ export default function OrderDetailClient() {
 
     if (!newLineItemId) return alert("Select an item for the new line.");
     if (!newLineQty) return alert("Enter quantity for the new line.");
+    if (!newLineRate) return alert("Enter a rate for the new line.");
 
     const qty = parseInt(newLineQty, 10);
     if (!qty || qty <= 0) return alert("Quantity must be greater than zero.");
 
+    const rate = Number(newLineRate);
+    if (Number.isNaN(rate) || rate < 0) {
+      return alert("Please enter a valid rate for the new line.");
+    }
+
     const item = items.find((i) => i.id === newLineItemId);
-    const rate = Number(item?.dealer_rate ?? 0) || 0;
     const lineTotal = rate * qty;
     const note = newLineNote.trim() || null;
 
@@ -520,7 +798,21 @@ export default function OrderDetailClient() {
       setAddingLine(false);
       setNewLineItemId("");
       setNewLineQty("");
+      setNewLineRate("");
       setNewLineNote("");
+
+      const totalsSyncError = await syncOrderHeaderTotals([
+        ...(order.order_lines || []),
+        {
+          qty,
+          dealer_rate_at_order: rate,
+          line_total: lineTotal,
+        },
+      ]);
+
+      if (totalsSyncError) {
+        alert(`Line added, but order totals could not be refreshed: ${totalsSyncError}`);
+      }
 
       await loadOrder();
       await loadLogs();
@@ -693,6 +985,9 @@ export default function OrderDetailClient() {
       dispatchedToday={dispatchedToday}
       handleDispatchedTodayChange={handleDispatchedTodayChange}
       handleNoteChange={handleNoteChange}
+      handleRateChange={handleRateChange}
+      undoingDispatchEventId={undoingDispatchEventId}
+      undoDispatchEvent={undoDispatchEvent}
       savingDispatch={savingDispatch}
       saveDispatchAndNotes={saveDispatchAndNotes}
       // delete
@@ -703,13 +998,17 @@ export default function OrderDetailClient() {
       setAddingLine={setAddingLine}
       newLineItemId={newLineItemId}
       setNewLineItemId={setNewLineItemId}
+      newLineRate={newLineRate}
+      setNewLineRate={setNewLineRate}
       newLineQty={newLineQty}
       setNewLineQty={setNewLineQty}
       newLineNote={newLineNote}
       dispatchEvents={dispatchEvents}
       setNewLineNote={setNewLineNote}
       savingNewLine={savingNewLine}
+      handleNewLineItemChange={handleNewLineItemChange}
       handleNewLineQtyChange={handleNewLineQtyChange}
+      handleNewLineRateChange={handleNewLineRateChange}
       addNewLine={addNewLine}
       // actions
       exportPDF={exportPDF}

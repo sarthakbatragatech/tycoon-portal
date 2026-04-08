@@ -546,11 +546,15 @@ export default function ItemsPage() {
                           style={{
                             padding: "3px 10px",
                             borderRadius: 999,
-                            border: "1px solid #333",
+                            border: it.is_active
+                              ? "1px solid #166534"
+                              : "1px solid var(--pill-border)",
                             background: it.is_active
                               ? "#16a34a"
                               : "transparent",
-                            color: it.is_active ? "#000" : "#f5f5f5",
+                            color: it.is_active
+                              ? "#04150a"
+                              : "var(--text-primary)",
                             fontSize: 11,
                           }}
                         >
@@ -567,9 +571,9 @@ export default function ItemsPage() {
                           style={{
                             padding: "4px 12px",
                             borderRadius: 999,
-                            border: "1px solid #fff",
+                            border: "1px solid var(--pill-border)",
                             background: "transparent",
-                            color: "#fff",
+                            color: "var(--text-primary)",
                             fontSize: 11,
                           }}
                         >
