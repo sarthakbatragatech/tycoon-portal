@@ -432,15 +432,9 @@ export default function PunchOrderClient() {
             <tr>
               <td colSpan={7} style={{ textAlign: "center", padding: 10 }}>
                 <button
+                  className="pill-button"
                   type="button"
                   onClick={addLine}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 999,
-                    border: "1px solid #fff",
-                    background: "transparent",
-                    color: "#fff",
-                  }}
                 >
                   + Add Line
                 </button>

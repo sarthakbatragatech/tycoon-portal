@@ -20,6 +20,10 @@ function copyCookies(source: NextResponse, target: NextResponse) {
   return target;
 }
 
+function apiErrorResponse(source: NextResponse, status: number, error: string) {
+  return copyCookies(source, NextResponse.json({ error }, { status }));
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request,
@@ -49,6 +53,7 @@ export async function updateSession(request: NextRequest) {
   );
 
   const pathname = request.nextUrl.pathname;
+  const isApiRequest = pathname.startsWith("/api/");
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = claimsData?.claims?.sub;
   const isAuthFree = AUTH_FREE_PATHS.has(pathname);
@@ -56,6 +61,10 @@ export async function updateSession(request: NextRequest) {
   if (!userId) {
     if (isAuthFree) {
       return response;
+    }
+
+    if (isApiRequest) {
+      return apiErrorResponse(response, 401, "Authentication required.");
     }
 
     const loginUrl = request.nextUrl.clone();
@@ -70,6 +79,10 @@ export async function updateSession(request: NextRequest) {
     .maybeSingle();
 
   if (!profile) {
+    if (isApiRequest) {
+      return apiErrorResponse(response, 401, "User profile not found.");
+    }
+
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     return copyCookies(response, NextResponse.redirect(loginUrl));
@@ -82,6 +95,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (profile.role !== "admin" && !isReadOnlyAllowedPath(pathname)) {
+    if (isApiRequest) {
+      return apiErrorResponse(response, 403, "You do not have access to this resource.");
+    }
+
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/dispatch-planning";
     return copyCookies(response, NextResponse.redirect(redirectUrl));

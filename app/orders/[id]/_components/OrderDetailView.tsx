@@ -214,6 +214,7 @@ export default function OrderDetailView(props: any) {
   };
   const backHref = readOnly ? "/dispatch-planning" : "/orders";
   const showFinancials = canSeeFinancials !== false;
+  const showExportFinancials = false;
   const pendingTableColSpan = 5 + (showFinancials ? 1 : 0) + (readOnly ? 0 : 2);
 
   if (!order) {
@@ -1371,7 +1372,7 @@ export default function OrderDetailView(props: any) {
             <tr style={{ background: "#f3f4f6" }}>
               {[
                 "Item",
-                ...(showFinancials ? ["Rate"] : []),
+                ...(showExportFinancials ? ["Rate"] : []),
                 "Ordered",
                 "Dispatched",
                 "Pending",
@@ -1400,7 +1401,6 @@ export default function OrderDetailView(props: any) {
             {(pendingLines || []).map((l: any, idx: number) => {
               const item = getItemFromRel(l);
               const { ordered, dispatched, pending } = getLineStats(l);
-              const rate = Number(l?.dealer_rate_at_order) || 0;
               const note = (l?.line_remarks ?? "").trim();
 
               return (
@@ -1417,7 +1417,7 @@ export default function OrderDetailView(props: any) {
                   >
                     {item?.name ?? "Unknown item"}
                   </td>
-                  {showFinancials && (
+                  {showExportFinancials && (
                     <td
                       style={{
                         padding: "9px 10px",
@@ -1425,7 +1425,7 @@ export default function OrderDetailView(props: any) {
                         textAlign: "center",
                       }}
                     >
-                      ₹ {rate.toLocaleString("en-IN")}
+                      ₹ {(Number(l?.dealer_rate_at_order) || 0).toLocaleString("en-IN")}
                     </td>
                   )}
                   <td
@@ -1474,7 +1474,7 @@ export default function OrderDetailView(props: any) {
             {(pendingLines || []).length === 0 && (
               <tr>
                 <td
-                  colSpan={showFinancials ? 6 : 5}
+                  colSpan={showExportFinancials ? 6 : 5}
                   style={{
                     padding: 12,
                     textAlign: "center",
@@ -1502,7 +1502,7 @@ export default function OrderDetailView(props: any) {
                 getItemFromRel={getItemFromRel}
                 getLineStats={getLineStats}
                 formatDateShort={formatDateShort}
-                showFinancials={showFinancials}
+                showFinancials={showExportFinancials}
                 variant="print"
               />
             </div>

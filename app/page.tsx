@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import html2canvas from "html2canvas";
 import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
 
@@ -87,6 +88,59 @@ function isUncategorised(cat: any) {
 
 function isExcludedDemandCategory(cat: any) {
   return isSpareCategory(cat) || isUncategorised(cat);
+}
+
+function formatIstDateLabel(date: Date = new Date()) {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatIstDateFilePart(date: Date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(date);
+
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value || "00";
+
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+}
+
+function splitRowsIntoColumns(rows: any[], columnCount: number) {
+  if (!rows.length) return [];
+
+  const size = Math.ceil(rows.length / columnCount);
+  return Array.from({ length: columnCount }, (_, index) =>
+    rows.slice(index * size, (index + 1) * size)
+  ).filter((column) => column.length > 0);
+}
+
+function formatCategoryLabel(category: any) {
+  const value = String(category ?? "").trim();
+  if (!value) return "Uncategorised";
+
+  return value
+    .split(/\s+/)
+    .map((part) =>
+      part ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}` : part
+    )
+    .join(" ");
+}
+
+function getBomFamilyLabel(itemName: any) {
+  const value = String(itemName ?? "").trim();
+  if (!value) return "Unknown";
+
+  const modelPrefix = value.match(/^[A-Za-z]+-[A-Za-z0-9]+/);
+  if (modelPrefix) return modelPrefix[0];
+
+  return value.split(/\s+/)[0] || value;
 }
 
 // ---------- SALES CHART (DISPATCH-EVENTS BASED) ----------
@@ -387,6 +441,8 @@ const PRODUCTION_ACTIVE_STATUSES = [
 
 export default function DashboardPage() {
   const themeMode = useThemeMode();
+  const productionPlanExportRef = useRef<HTMLDivElement | null>(null);
+  const planFamilyRequestKeyRef = useRef("");
   const [isMobileViewport, setIsMobileViewport] = useState(
     () => typeof window !== "undefined" && window.innerWidth <= 768
   );
@@ -406,6 +462,12 @@ export default function DashboardPage() {
     "pending" | "pendingPercent" | "ordered"
   >("pending");
   const [backlogShowAll, setBacklogShowAll] = useState(false);
+  const [planImageExporting, setPlanImageExporting] = useState(false);
+  const [planImageDateLabel, setPlanImageDateLabel] = useState(() =>
+    formatIstDateLabel(new Date())
+  );
+  const [tycoonPlanFamilyRows, setTycoonPlanFamilyRows] = useState<any[]>([]);
+  const [planFamilyRowsLoading, setPlanFamilyRowsLoading] = useState(false);
 
   // Sales totals (dispatch-events based)
   const [salesTotals, setSalesTotals] = useState({
@@ -817,6 +879,7 @@ export default function DashboardPage() {
     categoryDemandArray,
     orderFulfillmentArray,
     backlogItemsRaw,
+    tycoonProductionPlanRows,
   } = useMemo(() => {
     const result = {
       totalOrders: 0,
@@ -827,6 +890,7 @@ export default function DashboardPage() {
       categoryDemandArray: [] as any[],
       orderFulfillmentArray: [] as any[],
       backlogItemsRaw: [] as any[],
+      tycoonProductionPlanRows: [] as any[],
     };
 
     if (!orders || orders.length === 0) return result;
@@ -982,6 +1046,38 @@ export default function DashboardPage() {
       .sort((a, b) => b.ordered - a.ordered)
       .slice(0, 12);
 
+    const byItemTycoonBacklog = new Map<
+      string,
+      { item: string; pending: number; category: string }
+    >();
+
+    for (const l of allTycoonLines) {
+      const catKey =
+        l.category && l.category.trim() !== ""
+          ? l.category
+          : "Uncategorised";
+
+      if (isSpareCategory(catKey)) continue;
+
+      if (!byItemTycoonBacklog.has(l.itemName)) {
+        byItemTycoonBacklog.set(l.itemName, {
+          item: l.itemName,
+          pending: 0,
+          category: catKey,
+        });
+      }
+
+      const agg = byItemTycoonBacklog.get(l.itemName)!;
+      agg.pending += l.pending;
+    }
+
+    result.tycoonProductionPlanRows = Array.from(byItemTycoonBacklog.values())
+      .filter((d) => d.pending > 0)
+      .sort((a, b) => {
+        if (b.pending !== a.pending) return b.pending - a.pending;
+        return String(a.item).localeCompare(String(b.item));
+      });
+
     // ---- BACKLOG (ALL COMPANIES) ----
     const byItemAll = new Map<
       string,
@@ -1120,6 +1216,166 @@ export default function DashboardPage() {
     return rows;
   }, [backlogItemsRaw, backlogSortBy, backlogShowAll]);
 
+  const tycoonPlanTotalPending = useMemo(
+    () =>
+      tycoonProductionPlanRows.reduce(
+        (sum: number, row: any) => sum + Number(row.pending ?? 0),
+        0
+      ),
+    [tycoonProductionPlanRows]
+  );
+
+  const tycoonPlanColumns = useMemo(() => {
+    const columnCount =
+      tycoonProductionPlanRows.length > 40
+        ? 3
+        : tycoonProductionPlanRows.length > 18
+          ? 2
+          : 1;
+
+    return splitRowsIntoColumns(tycoonProductionPlanRows, columnCount);
+  }, [tycoonProductionPlanRows]);
+
+  const tycoonPlanCategoryRows = useMemo(() => {
+    const byCategory = new Map<string, { category: string; pending: number }>();
+
+    for (const row of tycoonProductionPlanRows) {
+      const category = formatCategoryLabel(row.category);
+      if (!byCategory.has(category)) {
+        byCategory.set(category, {
+          category,
+          pending: 0,
+        });
+      }
+
+      const aggregate = byCategory.get(category)!;
+      aggregate.pending += Number(row.pending ?? 0);
+    }
+
+    return Array.from(byCategory.values()).sort((a, b) => {
+      if (b.pending !== a.pending) return b.pending - a.pending;
+      return String(a.category).localeCompare(String(b.category));
+    });
+  }, [tycoonProductionPlanRows]);
+
+  const fallbackTycoonPlanFamilyRows = useMemo(() => {
+    const byFamily = new Map<string, { family: string; pending: number }>();
+
+    for (const row of tycoonProductionPlanRows) {
+      const family = getBomFamilyLabel(row.item);
+      if (!byFamily.has(family)) {
+        byFamily.set(family, {
+          family,
+          pending: 0,
+        });
+      }
+
+      const aggregate = byFamily.get(family)!;
+      aggregate.pending += Number(row.pending ?? 0);
+    }
+
+    return Array.from(byFamily.values()).sort((a, b) => {
+      if (b.pending !== a.pending) return b.pending - a.pending;
+      return String(a.family).localeCompare(String(b.family));
+    });
+  }, [tycoonProductionPlanRows]);
+
+  const tycoonPlanRowSignature = useMemo(
+    () =>
+      tycoonProductionPlanRows
+        .map((row: any) => `${row.item}:${row.pending}:${row.category ?? ""}`)
+        .join("|"),
+    [tycoonProductionPlanRows]
+  );
+
+  const tycoonPlanResolvedFamilyRows =
+    planFamilyRequestKeyRef.current === tycoonPlanRowSignature && tycoonPlanFamilyRows.length > 0
+      ? tycoonPlanFamilyRows
+      : fallbackTycoonPlanFamilyRows;
+
+  const tycoonPlanCategoryColumns = useMemo(() => {
+    const columnCount = tycoonPlanCategoryRows.length > 8 ? 2 : 1;
+    return splitRowsIntoColumns(tycoonPlanCategoryRows, columnCount);
+  }, [tycoonPlanCategoryRows]);
+
+  const tycoonPlanFamilyColumns = useMemo(() => {
+    const columnCount = tycoonPlanResolvedFamilyRows.length > 8 ? 2 : 1;
+    return splitRowsIntoColumns(tycoonPlanResolvedFamilyRows, columnCount);
+  }, [tycoonPlanResolvedFamilyRows]);
+
+  async function loadTycoonPlanFamilyRows(force = false) {
+    if (!tycoonProductionPlanRows.length) {
+      setTycoonPlanFamilyRows([]);
+      planFamilyRequestKeyRef.current = "";
+      return [];
+    }
+
+    if (
+      !force &&
+      planFamilyRequestKeyRef.current === tycoonPlanRowSignature &&
+      tycoonPlanFamilyRows.length > 0
+    ) {
+      return tycoonPlanFamilyRows;
+    }
+
+    setPlanFamilyRowsLoading(true);
+
+    try {
+      const response = await fetch("/api/production-plan-metadata", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          rows: tycoonProductionPlanRows.map((row: any) => ({
+            item: row.item,
+            pending: row.pending,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        const errorMessage =
+          typeof errorPayload?.error === "string" && errorPayload.error.trim()
+            ? errorPayload.error.trim()
+            : null;
+        const statusMessage = errorMessage
+          ? `Production plan metadata request failed: ${response.status} (${errorMessage})`
+          : `Production plan metadata request failed: ${response.status}`;
+
+        if ([401, 403, 404].includes(response.status)) {
+          console.warn(`${statusMessage}. Falling back to item-name family grouping.`);
+          setTycoonPlanFamilyRows(fallbackTycoonPlanFamilyRows);
+          planFamilyRequestKeyRef.current = tycoonPlanRowSignature;
+          return fallbackTycoonPlanFamilyRows;
+        }
+
+        throw new Error(statusMessage);
+      }
+
+      const payload = await response.json();
+      const nextRows =
+        Array.isArray(payload?.familyRows) && payload.familyRows.length > 0
+          ? payload.familyRows
+          : fallbackTycoonPlanFamilyRows;
+
+      setTycoonPlanFamilyRows(nextRows);
+      planFamilyRequestKeyRef.current = tycoonPlanRowSignature;
+      return nextRows;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Error loading production plan family rows. Falling back to item-name family grouping. ${errorMessage}`
+      );
+      setTycoonPlanFamilyRows(fallbackTycoonPlanFamilyRows);
+      planFamilyRequestKeyRef.current = tycoonPlanRowSignature;
+      return fallbackTycoonPlanFamilyRows;
+    } finally {
+      setPlanFamilyRowsLoading(false);
+    }
+  }
+
   function downloadBacklogCsv() {
     if (!backlogRows || backlogRows.length === 0) {
       alert("No backlog data to export.");
@@ -1149,6 +1405,84 @@ export default function DashboardPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  async function downloadTycoonProductionPlanImage() {
+    if (!tycoonProductionPlanRows.length) {
+      alert("No Tycoon pending items to export.");
+      return;
+    }
+
+    const exportElement = productionPlanExportRef.current;
+    if (!exportElement) {
+      alert("Could not prepare the production plan image.");
+      return;
+    }
+
+    const now = new Date();
+    setPlanImageDateLabel(formatIstDateLabel(now));
+    setPlanImageExporting(true);
+
+    try {
+      await loadTycoonPlanFamilyRows();
+
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
+
+      const canvas = await html2canvas(exportElement, {
+        scale: 2.5,
+        useCORS: true,
+        backgroundColor: "#f6efe3",
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: exportElement.scrollWidth,
+        windowHeight: exportElement.scrollHeight,
+        logging: false,
+        onclone: (doc) => {
+          const cloned = doc.getElementById("tycoon-production-plan-export");
+          if (!cloned) return;
+
+          const wrapper = cloned.parentElement as HTMLElement | null;
+          if (wrapper) {
+            wrapper.style.transform = "none";
+            wrapper.style.position = "absolute";
+            wrapper.style.left = "0";
+            wrapper.style.top = "0";
+            wrapper.style.inset = "auto";
+            wrapper.style.zIndex = "9998";
+          }
+
+          cloned.style.opacity = "1";
+          cloned.style.visibility = "visible";
+          cloned.style.pointerEvents = "none";
+          cloned.style.position = "absolute";
+          cloned.style.left = "0";
+          cloned.style.top = "0";
+          cloned.style.transform = "none";
+          cloned.style.zIndex = "9999";
+        },
+      });
+
+      const url = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `tycoon-production-plan-${formatIstDateFilePart(now)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error exporting Tycoon production plan image", error);
+      alert("Could not export the production plan image.");
+    } finally {
+      setPlanImageExporting(false);
+    }
   }
 
   // ---------- SALES TABLE (dispatch-based) derived rows + sorting ----------
@@ -1964,6 +2298,7 @@ export default function DashboardPage() {
             <div className="card-label">Backlog Table · Pending by Item</div>
             <div className="card-meta">
               Same data as the backlog chart (all companies), with sorting, filters & export.
+              The plan image export uses Tycoon items only and excludes spares.
             </div>
 
             {/* Controls */}
@@ -2013,6 +2348,20 @@ export default function DashboardPage() {
                   }}
                 >
                   {backlogShowAll ? "Show top 8" : "Show all items"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadTycoonProductionPlanImage}
+                  disabled={planImageExporting || tycoonProductionPlanRows.length === 0}
+                  style={{
+                    ...uiTheme.ghostButton,
+                    ...(planImageExporting || tycoonProductionPlanRows.length === 0
+                      ? { opacity: 0.6, cursor: "not-allowed" }
+                      : {}),
+                  }}
+                >
+                  {planImageExporting ? "Preparing Image..." : "Download Plan Image"}
                 </button>
 
                 <button
@@ -2111,6 +2460,445 @@ export default function DashboardPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              inset: 0,
+              transform: "translateX(-220vw)",
+              pointerEvents: "none",
+              opacity: 1,
+              zIndex: -1,
+            }}
+          >
+            <div
+              id="tycoon-production-plan-export"
+              ref={productionPlanExportRef}
+              style={{
+                width: 1480,
+                padding: 44,
+                borderRadius: 34,
+                background:
+                  "linear-gradient(180deg, #f7f0e4 0%, #f1e6d5 54%, #ecdec9 100%)",
+                color: "#1f1c17",
+                boxShadow: "0 24px 80px rgba(54, 41, 25, 0.14)",
+                fontFamily:
+                  "\"Avenir Next\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 24,
+                  marginBottom: 28,
+                }}
+              >
+                <div style={{ maxWidth: 900 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      letterSpacing: "0.18em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                      marginBottom: 12,
+                    }}
+                  >
+                    Tycoon Production Planning
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 42,
+                      fontWeight: 800,
+                      lineHeight: 1.05,
+                      letterSpacing: "-0.03em",
+                    }}
+                  >
+                    Pending by Item
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    minWidth: 280,
+                    padding: "18px 20px",
+                    borderRadius: 24,
+                    background: "rgba(255, 251, 244, 0.82)",
+                    border: "1px solid rgba(124, 92, 47, 0.16)",
+                    boxShadow: "0 12px 32px rgba(84, 66, 42, 0.08)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.16em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Date
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 700,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {planImageDateLabel}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 14,
+                      color: "#6f624f",
+                    }}
+                  >
+                    IST
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 16,
+                  marginBottom: 26,
+                }}
+              >
+                <div
+                  style={{
+                    padding: "18px 22px",
+                    borderRadius: 22,
+                    background: "rgba(255, 251, 244, 0.78)",
+                    border: "1px solid rgba(124, 92, 47, 0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Pending Quantity
+                  </div>
+                  <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em" }}>
+                    {tycoonPlanTotalPending.toLocaleString("en-IN")} pcs
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "18px 22px",
+                    borderRadius: 22,
+                    background: "rgba(255, 251, 244, 0.78)",
+                    border: "1px solid rgba(124, 92, 47, 0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Active Items
+                  </div>
+                  <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em" }}>
+                    {tycoonProductionPlanRows.length.toLocaleString("en-IN")}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${Math.max(tycoonPlanColumns.length, 1)}, minmax(0, 1fr))`,
+                  gap: 18,
+                }}
+              >
+                {tycoonPlanColumns.map((column, columnIndex) => (
+                  <div
+                    key={`plan-column-${columnIndex}`}
+                    style={{
+                      padding: 18,
+                      borderRadius: 24,
+                      background: "rgba(255, 252, 247, 0.74)",
+                      border: "1px solid rgba(124, 92, 47, 0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) auto",
+                        gap: 12,
+                        padding: "0 8px 12px",
+                        marginBottom: 8,
+                        borderBottom: "1px solid rgba(124, 92, 47, 0.16)",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        color: "#7c5c2f",
+                      }}
+                    >
+                      <div>Item</div>
+                      <div>Pending</div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {column.map((row: any, rowIndex: number) => (
+                        <div
+                          key={`${columnIndex}-${row.item}-${rowIndex}`}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) auto",
+                            gap: 12,
+                            alignItems: "center",
+                            padding: "14px 16px",
+                            borderRadius: 18,
+                            background: "rgba(255, 255, 255, 0.8)",
+                            border: "1px solid rgba(124, 92, 47, 0.08)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 20,
+                              lineHeight: 1.35,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {row.item}
+                          </div>
+                          <div
+                            style={{
+                              minWidth: 118,
+                              padding: "10px 14px",
+                              borderRadius: 999,
+                              background: "#264734",
+                              color: "#f9f4ea",
+                              fontSize: 18,
+                              fontWeight: 800,
+                              textAlign: "center",
+                              letterSpacing: "-0.02em",
+                            }}
+                          >
+                            {Number(row.pending ?? 0).toLocaleString("en-IN")} pcs
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 22,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 18,
+                }}
+              >
+                <div
+                  style={{
+                    padding: 18,
+                    borderRadius: 24,
+                    background: "rgba(255, 252, 247, 0.74)",
+                    border: "1px solid rgba(124, 92, 47, 0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) auto",
+                      gap: 12,
+                      padding: "0 8px 12px",
+                      marginBottom: 8,
+                      borderBottom: "1px solid rgba(124, 92, 47, 0.16)",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                    }}
+                  >
+                    <div>Category</div>
+                    <div>Pending</div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${Math.max(tycoonPlanCategoryColumns.length, 1)}, minmax(0, 1fr))`,
+                      gap: 12,
+                    }}
+                  >
+                    {tycoonPlanCategoryColumns.map((column, columnIndex) => (
+                      <div key={`category-column-${columnIndex}`} style={{ display: "grid", gap: 10 }}>
+                        {column.map((row: any, rowIndex: number) => (
+                          <div
+                            key={`category-${columnIndex}-${row.category}-${rowIndex}`}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0, 1fr) auto",
+                              gap: 12,
+                              alignItems: "center",
+                              padding: "14px 16px",
+                              borderRadius: 18,
+                              background: "rgba(255, 255, 255, 0.8)",
+                              border: "1px solid rgba(124, 92, 47, 0.08)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 20,
+                                lineHeight: 1.35,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {row.category}
+                            </div>
+                            <div
+                              style={{
+                                minWidth: 118,
+                                padding: "10px 14px",
+                                borderRadius: 999,
+                                background: "#264734",
+                                color: "#f9f4ea",
+                                fontSize: 18,
+                                fontWeight: 800,
+                                textAlign: "center",
+                                letterSpacing: "-0.02em",
+                              }}
+                            >
+                              {Number(row.pending ?? 0).toLocaleString("en-IN")} pcs
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: 18,
+                    borderRadius: 24,
+                    background: "rgba(255, 252, 247, 0.74)",
+                    border: "1px solid rgba(124, 92, 47, 0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) auto",
+                      gap: 12,
+                      padding: "0 8px 12px",
+                      marginBottom: 8,
+                      borderBottom: "1px solid rgba(124, 92, 47, 0.16)",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                    }}
+                  >
+                    <div>BOM Family</div>
+                    <div>Pending</div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${Math.max(tycoonPlanFamilyColumns.length, 1)}, minmax(0, 1fr))`,
+                      gap: 12,
+                    }}
+                  >
+                    {tycoonPlanFamilyColumns.map((column, columnIndex) => (
+                      <div key={`family-column-${columnIndex}`} style={{ display: "grid", gap: 10 }}>
+                        {column.map((row: any, rowIndex: number) => (
+                          <div
+                            key={`family-${columnIndex}-${row.family}-${rowIndex}`}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0, 1fr) auto",
+                              gap: 12,
+                              alignItems: "center",
+                              padding: "14px 16px",
+                              borderRadius: 18,
+                              background: "rgba(255, 255, 255, 0.8)",
+                              border: "1px solid rgba(124, 92, 47, 0.08)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 20,
+                                lineHeight: 1.35,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {row.family}
+                            </div>
+                            <div
+                              style={{
+                                minWidth: 118,
+                                padding: "10px 14px",
+                                borderRadius: 999,
+                                background: "#264734",
+                                color: "#f9f4ea",
+                                fontSize: 18,
+                                fontWeight: 800,
+                                textAlign: "center",
+                                letterSpacing: "-0.02em",
+                              }}
+                            >
+                              {Number(row.pending ?? 0).toLocaleString("en-IN")} pcs
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+
+                  {planFamilyRowsLoading && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        fontSize: 12,
+                        color: "#7c5c2f",
+                      }}
+                    >
+                      Refreshing family data from inventory portal...
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 24,
+                  fontSize: 14,
+                  color: "#6f624f",
+                }}
+              >
+                Generated from the Tycoon Portal backlog view.
+              </div>
             </div>
           </div>
         </>
