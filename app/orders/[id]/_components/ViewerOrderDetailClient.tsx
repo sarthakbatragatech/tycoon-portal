@@ -3,16 +3,25 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { STATUS_COLORS, STATUS_LABELS } from "@/lib/constants/status";
+import {
+  STATUS_COLORS,
+  STATUS_LABELS,
+  VIEWER_STATUS_OPTIONS,
+  canViewerUpdateOrderStatus,
+} from "@/lib/constants/status";
 import { supabase } from "@/lib/supabase";
+import { exportOrderPdf } from "@/lib/features/order-export/pdf";
 import OrderDetailView from "./OrderDetailView";
 
 export default function ViewerOrderDetailClient() {
+  const viewerStatusValues = VIEWER_STATUS_OPTIONS.map((option) => option.value);
   const params = useParams();
   const router = useRouter();
   const orderId = params?.id as string;
   const [payload, setPayload] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string>(VIEWER_STATUS_OPTIONS[0]?.value || "in_production");
 
   useEffect(() => {
     if (!orderId) return;
@@ -33,8 +42,61 @@ export default function ViewerOrderDetailClient() {
       return;
     }
 
-    setPayload(data || null);
+    const nextPayload = data || null;
+    setPayload(nextPayload);
+    const nextStatus = nextPayload?.order?.status;
+    setSelectedStatus(
+      viewerStatusValues.includes(nextStatus) ? nextStatus : VIEWER_STATUS_OPTIONS[0]?.value || "in_production"
+    );
     setLoading(false);
+  }
+
+  function handleStatusChange(value: string) {
+    setSelectedStatus(value);
+  }
+
+  async function saveStatus() {
+    const currentOrder = payload?.order;
+    if (!currentOrder) return;
+
+    setSavingStatus(true);
+
+    try {
+      const response = await fetch("/api/orders/viewer-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderId,
+          status: selectedStatus,
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        alert(result?.error || "Could not update order status.");
+        await loadOrder();
+        return;
+      }
+
+      await loadOrder();
+      alert("Order status updated.");
+    } finally {
+      setSavingStatus(false);
+    }
+  }
+
+  async function exportPDF() {
+    if (!order) return;
+
+    try {
+      await exportOrderPdf({ order, elementId: "order-export-print" });
+    } catch (error) {
+      console.error("PDF export failed:", error);
+      alert("PDF export failed. Check console for details.");
+    }
   }
 
   if (loading) {
@@ -80,6 +142,10 @@ export default function ViewerOrderDetailClient() {
   const statusColor = STATUS_COLORS[(order?.status || "pending") as string] || "#4b5563";
   const statusLabel = STATUS_LABELS[order?.status] ?? order?.status ?? "Pending";
   const displayCode = order?.order_code || order?.id;
+  const canEditStatus = canViewerUpdateOrderStatus(order?.status);
+  const statusHelpText = canEditStatus
+    ? "Viewer access can mark this order as In production or Packed."
+    : "Only admin can change this status now.";
 
   return (
     <OrderDetailView
@@ -103,9 +169,10 @@ export default function ViewerOrderDetailClient() {
       setOrderRemarks={() => {}}
       savingRemarks={false}
       saveRemarks={() => {}}
-      savingStatus={false}
-      handleStatusChange={() => {}}
-      saveStatus={() => {}}
+      savingStatus={savingStatus}
+      handleStatusChange={handleStatusChange}
+      saveStatus={saveStatus}
+      statusValue={selectedStatus}
       expectedDispatch={orderHeader?.expected_dispatch_date ?? ""}
       setExpectedDispatch={() => {}}
       savingExpectedDate={false}
@@ -131,9 +198,12 @@ export default function ViewerOrderDetailClient() {
       savingNewLine={false}
       handleNewLineQtyChange={() => {}}
       addNewLine={() => {}}
-      exportPDF={() => {}}
+      exportPDF={exportPDF}
       shareOnWhatsApp={() => {}}
       readOnly
+      canEditStatus={canEditStatus}
+      statusOptions={VIEWER_STATUS_OPTIONS}
+      statusHelpText={statusHelpText}
       canSeeFinancials={false}
     />
   );

@@ -31,6 +31,23 @@ export const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+export const VIEWER_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
+  { value: "in_production", label: "In production" },
+  { value: "packed", label: "Packed" },
+];
+
+export const VIEWER_EDITABLE_ORDER_STATUSES: OrderStatus[] = [
+  "submitted",
+  "pending",
+  "in_production",
+  "packed",
+];
+
+export function canViewerUpdateOrderStatus(status?: string | null) {
+  if (!status) return false;
+  return (VIEWER_EDITABLE_ORDER_STATUSES as string[]).includes(status);
+}
+
 // Match Orders page colours
 export const STATUS_COLORS: Record<string, string> = {
   pending: "#6b7280", // grey

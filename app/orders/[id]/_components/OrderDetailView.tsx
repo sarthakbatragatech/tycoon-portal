@@ -24,6 +24,9 @@ export default function OrderDetailView(props: any) {
     handleStatusChange,
     saveStatus,
     statusColor,
+    canEditStatus,
+    statusOptions = STATUS_OPTIONS,
+    statusHelpText = null,
 
     // expected dispatch
     expectedDispatch,
@@ -216,6 +219,10 @@ export default function OrderDetailView(props: any) {
   const showFinancials = canSeeFinancials !== false;
   const showExportFinancials = false;
   const pendingTableColSpan = 5 + (showFinancials ? 1 : 0) + (readOnly ? 0 : 2);
+  const statusValue = props.statusValue ?? order?.status ?? "pending";
+  const resolvedCanEditStatus = canEditStatus ?? !readOnly;
+  const showStatusEditor =
+    resolvedCanEditStatus && typeof handleStatusChange === "function" && typeof saveStatus === "function";
 
   if (!order) {
     return (
@@ -295,11 +302,57 @@ export default function OrderDetailView(props: any) {
                 }}
               >
                 {readOnly ? (
-                  <span style={{ opacity: 0.72 }}>View only access</span>
+                  showStatusEditor ? (
+                    <>
+                      <select
+                        value={statusValue}
+                        onChange={(e) => handleStatusChange?.(e.target.value)}
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid #333",
+                          background: "#050505",
+                          color: "#f5f5f5",
+                          fontSize: 11,
+                        }}
+                      >
+                        {(statusOptions || []).map((opt: any) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => saveStatus?.()}
+                        disabled={!!savingStatus}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          border: savingStatus
+                            ? "1px solid var(--input-border)"
+                            : "1px solid var(--pill-border)",
+                          background: "var(--surface-elevated)",
+                          color: savingStatus
+                            ? "var(--text-secondary)"
+                            : "var(--text-primary)",
+                          fontSize: 11,
+                          cursor: savingStatus ? "default" : "pointer",
+                          fontWeight: 800,
+                          opacity: savingStatus ? 0.72 : 1,
+                        }}
+                      >
+                        {savingStatus ? "Saving…" : "Save"}
+                      </button>
+                    </>
+                  ) : (
+                    <span style={{ opacity: 0.72 }}>{statusHelpText || "View only access"}</span>
+                  )
                 ) : (
                   <>
                     <select
-                      value={order.status}
+                      value={statusValue}
                       onChange={(e) => handleStatusChange?.(e.target.value)}
                       style={{
                         padding: "4px 8px",
@@ -342,6 +395,12 @@ export default function OrderDetailView(props: any) {
                   </>
                 )}
               </div>
+
+              {readOnly && statusHelpText && (
+                <div style={{ marginTop: 8, opacity: 0.72 }}>
+                  {statusHelpText}
+                </div>
+              )}
             </div>
           </div>
 
@@ -462,12 +521,6 @@ export default function OrderDetailView(props: any) {
             <div className="card-meta" style={{ marginTop: 6, fontSize: 12 }}>
               Dispatched: {totalDispatched}/{totalOrdered} pcs
             </div>
-
-            {!showFinancials && (
-              <div className="card-meta" style={{ marginTop: 4, fontSize: 11 }}>
-                Financial values hidden in view-only mode
-              </div>
-            )}
 
             <div style={{ marginTop: 8 }}>
               <div
@@ -1112,17 +1165,19 @@ export default function OrderDetailView(props: any) {
             {readOnly ? "← Back to dispatch plan" : "← Back to orders"}
           </button>
 
+          {!!exportPDF && (
+            <button
+              className="pill-button"
+              type="button"
+              onClick={() => exportPDF?.()}
+              style={{ background: "#e5e5e5", color: "#000" }}
+            >
+              📄 Export as PDF
+            </button>
+          )}
+
           {!readOnly && showFinancials && (
             <>
-              <button
-                className="pill-button"
-                type="button"
-                onClick={() => exportPDF?.()}
-                style={{ background: "#e5e5e5", color: "#000" }}
-              >
-                📄 Export as PDF
-              </button>
-
               <button
                 className="pill-button"
                 type="button"

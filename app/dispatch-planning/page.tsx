@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthContext } from "@/app/_components/AuthProvider";
 import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
@@ -250,6 +250,7 @@ export default function DispatchPlanningPage() {
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
   const [movingOrderId, setMovingOrderId] = useState<string | null>(null);
+  const latestLoadRequestRef = useRef(0);
 
   const uiTheme = useMemo(
     () =>
@@ -348,129 +349,158 @@ export default function DispatchPlanningPage() {
     });
   }, [isMobileViewport]);
 
-  async function loadPlanningOrders() {
+  async function loadPlanningOrders(options?: { preserveExistingOrdersOnError?: boolean }) {
+    const preserveExistingOrdersOnError = options?.preserveExistingOrdersOnError ?? false;
+    const requestId = latestLoadRequestRef.current + 1;
+    latestLoadRequestRef.current = requestId;
+
     setLoading(true);
     setError(null);
 
-    if (isViewOnly) {
-      const { data, error } = await supabase.rpc("viewer_dispatch_orders");
+    try {
+      if (isViewOnly) {
+        const { data, error } = await supabase.rpc("viewer_dispatch_orders");
+
+        if (requestId !== latestLoadRequestRef.current) {
+          return;
+        }
+
+        if (error) {
+          console.error("Error loading viewer dispatch planning board", error);
+          if (!preserveExistingOrdersOnError) {
+            setOrders([]);
+          }
+          setError("Could not load dispatch planning data.");
+          setLoading(false);
+          return;
+        }
+
+        const rows = Array.isArray(data) ? data : [];
+        setOrders(mapViewerOrders(rows as ViewerDispatchOrder[]));
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("orders")
+        .select(
+          `
+          id,
+          order_code,
+          order_date,
+          expected_dispatch_date,
+          status,
+          remarks,
+          total_value,
+          parties (
+            name,
+            city
+          ),
+          order_lines (
+            qty,
+            dispatched_qty,
+            dealer_rate_at_order,
+            items (
+              name,
+              category
+            )
+          )
+        `
+        )
+        .in("status", ACTIVE_STATUSES)
+        .order("expected_dispatch_date", { ascending: true, nullsFirst: false })
+        .order("order_date", { ascending: true });
+
+      if (requestId !== latestLoadRequestRef.current) {
+        return;
+      }
 
       if (error) {
-        console.error("Error loading viewer dispatch planning board", error);
-        setOrders([]);
+        console.error("Error loading dispatch planning board", error);
+        if (!preserveExistingOrdersOnError) {
+          setOrders([]);
+        }
         setError("Could not load dispatch planning data.");
         setLoading(false);
         return;
       }
 
-      const rows = Array.isArray(data) ? data : [];
-      setOrders(mapViewerOrders(rows as ViewerDispatchOrder[]));
+      const mapped = ((data || []) as RawOrder[])
+        .map((order) => {
+          const party = safeFirst(order.parties);
+          const items: PlanningItem[] = (order.order_lines || [])
+            .map((line: any) => {
+              const item = safeFirst(line?.items);
+              const ordered = safeNumber(line?.qty);
+              let dispatched = safeNumber(line?.dispatched_qty);
+              if (dispatched < 0) dispatched = 0;
+              if (dispatched > ordered) dispatched = ordered;
+              const pending = Math.max(ordered - dispatched, 0);
+
+              return {
+                name: (item?.name || "Unknown item").trim(),
+                category: (item?.category || "Uncategorised").trim() || "Uncategorised",
+                ordered,
+                dispatched,
+                pending,
+              };
+            })
+            .filter((line) => line.pending > 0)
+            .sort((a, b) => b.pending - a.pending);
+
+          const orderedQty = items.reduce((sum, line) => sum + line.ordered, 0);
+          const dispatchedQty = items.reduce((sum, line) => sum + line.dispatched, 0);
+          const pendingQty = items.reduce((sum, line) => sum + line.pending, 0);
+          const urgency = getUrgencyMeta(order.expected_dispatch_date);
+          const totalValue =
+            safeNumber(order.total_value) ||
+            (order.order_lines || []).reduce((sum: number, line: any) => {
+              const qty = safeNumber(line?.qty);
+              return sum + qty * safeNumber(line?.dealer_rate_at_order);
+            }, 0);
+
+          return {
+            id: order.id,
+            orderCode: order.order_code || order.id.slice(0, 8),
+            partyName: party?.name || "Unknown customer",
+            city: party?.city || "",
+            orderDate: order.order_date,
+            orderDateLabel: formatDateLabel(order.order_date),
+            expectedDispatchDate: order.expected_dispatch_date,
+            expectedDispatchLabel: formatDateLabel(order.expected_dispatch_date),
+            status: order.status || "pending",
+            statusLabel: getStatusLabel(order.status),
+            statusColor: getStatusColor(order.status),
+            remarks: (order.remarks || "").trim(),
+            totalValue,
+            orderedQty,
+            dispatchedQty,
+            pendingQty,
+            pendingLines: items.length,
+            urgencyBucket: urgency.bucket,
+            urgencyLabel: urgency.label,
+            urgencySort: urgency.sort,
+            overdueDays: urgency.overdueDays,
+            fulfillmentPct: orderedQty > 0 ? Math.round((dispatchedQty / orderedQty) * 100) : 0,
+            items,
+          } satisfies PlanningOrder;
+        })
+        .filter((order) => order.pendingQty > 0);
+
+      setOrders(mapped);
       setLoading(false);
-      return;
-    }
+    } catch (loadError) {
+      if (requestId !== latestLoadRequestRef.current) {
+        return;
+      }
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select(
-        `
-        id,
-        order_code,
-        order_date,
-        expected_dispatch_date,
-        status,
-        remarks,
-        total_value,
-        parties (
-          name,
-          city
-        ),
-        order_lines (
-          qty,
-          dispatched_qty,
-          dealer_rate_at_order,
-          items (
-            name,
-            category
-          )
-        )
-      `
-      )
-      .in("status", ACTIVE_STATUSES)
-      .order("expected_dispatch_date", { ascending: true, nullsFirst: false })
-      .order("order_date", { ascending: true });
-
-    if (error) {
-      console.error("Error loading dispatch planning board", error);
-      setOrders([]);
+      console.error("Unexpected error loading dispatch planning board", loadError);
+      if (!preserveExistingOrdersOnError) {
+        setOrders([]);
+      }
       setError("Could not load dispatch planning data.");
       setLoading(false);
-      return;
     }
-
-    const mapped = ((data || []) as RawOrder[])
-      .map((order) => {
-        const party = safeFirst(order.parties);
-        const items: PlanningItem[] = (order.order_lines || [])
-          .map((line: any) => {
-            const item = safeFirst(line?.items);
-            const ordered = safeNumber(line?.qty);
-            let dispatched = safeNumber(line?.dispatched_qty);
-            if (dispatched < 0) dispatched = 0;
-            if (dispatched > ordered) dispatched = ordered;
-            const pending = Math.max(ordered - dispatched, 0);
-
-            return {
-              name: (item?.name || "Unknown item").trim(),
-              category: (item?.category || "Uncategorised").trim() || "Uncategorised",
-              ordered,
-              dispatched,
-              pending,
-            };
-          })
-          .filter((line) => line.pending > 0)
-          .sort((a, b) => b.pending - a.pending);
-
-        const orderedQty = items.reduce((sum, line) => sum + line.ordered, 0);
-        const dispatchedQty = items.reduce((sum, line) => sum + line.dispatched, 0);
-        const pendingQty = items.reduce((sum, line) => sum + line.pending, 0);
-        const urgency = getUrgencyMeta(order.expected_dispatch_date);
-        const totalValue =
-          safeNumber(order.total_value) ||
-          (order.order_lines || []).reduce((sum: number, line: any) => {
-            const qty = safeNumber(line?.qty);
-            return sum + qty * safeNumber(line?.dealer_rate_at_order);
-          }, 0);
-
-        return {
-          id: order.id,
-          orderCode: order.order_code || order.id.slice(0, 8),
-          partyName: party?.name || "Unknown customer",
-          city: party?.city || "",
-          orderDate: order.order_date,
-          orderDateLabel: formatDateLabel(order.order_date),
-          expectedDispatchDate: order.expected_dispatch_date,
-          expectedDispatchLabel: formatDateLabel(order.expected_dispatch_date),
-          status: order.status || "pending",
-          statusLabel: getStatusLabel(order.status),
-          statusColor: getStatusColor(order.status),
-          remarks: (order.remarks || "").trim(),
-          totalValue,
-          orderedQty,
-          dispatchedQty,
-          pendingQty,
-          pendingLines: items.length,
-          urgencyBucket: urgency.bucket,
-          urgencyLabel: urgency.label,
-          urgencySort: urgency.sort,
-          overdueDays: urgency.overdueDays,
-          fulfillmentPct: orderedQty > 0 ? Math.round((dispatchedQty / orderedQty) * 100) : 0,
-          items,
-        } satisfies PlanningOrder;
-      })
-      .filter((order) => order.pendingQty > 0);
-
-    setOrders(mapped);
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -479,6 +509,36 @@ export default function DispatchPlanningPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
+  }, [isViewOnly]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const refreshAfterReturn = () => {
+      window.setTimeout(() => {
+        loadPlanningOrders({ preserveExistingOrdersOnError: true });
+      }, 0);
+    };
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        refreshAfterReturn();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshAfterReturn();
+      }
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pageshow", handlePageShow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [isViewOnly]);
 
   useEffect(() => {
@@ -718,16 +778,14 @@ export default function DispatchPlanningPage() {
     const sameMonth =
       !Number.isNaN(selected.getTime()) &&
       selected.getFullYear() === calendarMonthDate.getFullYear() &&
-      selected.getMonth() === calendarMonthDate.getMonth() &&
-      selected.getDay() !== 0;
+      selected.getMonth() === calendarMonthDate.getMonth();
 
     if (sameMonth) return selectedDate;
 
     const todayDate = parseISODateLocal(todayISO);
     if (
       todayDate.getFullYear() === calendarMonthDate.getFullYear() &&
-      todayDate.getMonth() === calendarMonthDate.getMonth() &&
-      todayDate.getDay() !== 0
+      todayDate.getMonth() === calendarMonthDate.getMonth()
     ) {
       return todayISO;
     }
