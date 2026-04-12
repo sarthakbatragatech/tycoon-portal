@@ -11,7 +11,9 @@ import {
 
 const DEFAULT_IMAGE_WIDTH = 1600;
 const TEMPLATE_IMAGE_WIDTH = 1600;
-const TEMPLATE_IMAGE_HEIGHT = 900;
+const TEMPLATE_IMAGE_MIN_HEIGHT = 900;
+const WHATSAPP_TEMPLATE_MAX_ITEM_ROWS = 12;
+const WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS = 4;
 
 export type ProductionPlanImageVariant = "default" | "whatsapp-template";
 
@@ -25,7 +27,7 @@ function getItemColumns(rows: ProductionPlanRow[]) {
 }
 
 function getTemplateItemColumns(rows: ProductionPlanRow[]) {
-  const columnCount = rows.length > 36 ? 4 : rows.length > 12 ? 3 : 2;
+  const columnCount = rows.length > 8 ? 3 : 2;
   return splitRowsIntoColumns(rows, columnCount);
 }
 
@@ -37,6 +39,50 @@ function getSummaryColumns<T>(rows: T[]) {
 function getTemplateSummaryColumns<T>(rows: T[]) {
   const columnCount = rows.length > 10 ? 2 : 1;
   return splitRowsIntoColumns(rows, columnCount);
+}
+
+function getWhatsappTemplateItemRows(rows: ProductionPlanRow[]) {
+  return rows.slice(0, WHATSAPP_TEMPLATE_MAX_ITEM_ROWS);
+}
+
+function getWhatsappTemplateItemOverflow(rows: ProductionPlanRow[]) {
+  const hiddenRows = rows.slice(WHATSAPP_TEMPLATE_MAX_ITEM_ROWS);
+  return {
+    hiddenCount: hiddenRows.length,
+    hiddenPending: hiddenRows.reduce((sum, row) => sum + Number(row.pending ?? 0), 0),
+  };
+}
+
+function getWhatsappTemplateCategoryRows(rows: ProductionPlanCategoryRow[]) {
+  if (rows.length <= WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS) return rows;
+
+  const visibleRows = rows.slice(0, WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
+  const hiddenRows = rows.slice(WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
+  const hiddenPending = hiddenRows.reduce((sum, row) => sum + Number(row.pending ?? 0), 0);
+
+  return [
+    ...visibleRows,
+    {
+      category: `+${hiddenRows.length} more`,
+      pending: hiddenPending,
+    },
+  ];
+}
+
+function getWhatsappTemplateFamilyRows(rows: ProductionPlanFamilyRow[]) {
+  if (rows.length <= WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS) return rows;
+
+  const visibleRows = rows.slice(0, WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
+  const hiddenRows = rows.slice(WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
+  const hiddenPending = hiddenRows.reduce((sum, row) => sum + Number(row.pending ?? 0), 0);
+
+  return [
+    ...visibleRows,
+    {
+      family: `+${hiddenRows.length} more`,
+      pending: hiddenPending,
+    },
+  ];
 }
 
 function estimateHeight(snapshot: ProductionPlanSnapshot) {
@@ -55,6 +101,34 @@ function estimateHeight(snapshot: ProductionPlanSnapshot) {
   const lowerSectionHeight = 170 + lowerRowsPerColumn * 64;
 
   return Math.max(1380, 430 + itemSectionHeight + lowerSectionHeight);
+}
+
+function estimateWhatsappTemplateHeight(snapshot: ProductionPlanSnapshot) {
+  const visibleItemRows = getWhatsappTemplateItemRows(snapshot.itemRows);
+  const itemOverflow = getWhatsappTemplateItemOverflow(snapshot.itemRows);
+  const visibleCategoryRows = getWhatsappTemplateCategoryRows(snapshot.categoryRows);
+  const visibleFamilyRows = getWhatsappTemplateFamilyRows(snapshot.familyRows);
+
+  const itemColumns = getTemplateItemColumns(visibleItemRows);
+  const categoryColumns = getTemplateSummaryColumns(visibleCategoryRows);
+  const familyColumns = getTemplateSummaryColumns(visibleFamilyRows);
+
+  const itemRowsPerColumn = Math.max(...itemColumns.map((column) => column.length), 0);
+  const lowerRowsPerColumn = Math.max(
+    ...categoryColumns.map((column) => column.length),
+    ...familyColumns.map((column) => column.length),
+    0
+  );
+
+  const topSectionHeight = 150;
+  const itemSectionHeight =
+    110 + itemRowsPerColumn * 64 + (itemOverflow.hiddenCount > 0 ? 34 : 0);
+  const lowerSectionHeight = 220 + lowerRowsPerColumn * 58;
+
+  return Math.max(
+    TEMPLATE_IMAGE_MIN_HEIGHT,
+    80 + topSectionHeight + itemSectionHeight + lowerSectionHeight
+  );
 }
 
 function SectionHeader({ label, value }: { label: string; value: string }) {
@@ -697,9 +771,13 @@ function WhatsappTemplateProductionPlanImage({
 }: {
   snapshot: ProductionPlanSnapshot;
 }) {
-  const itemColumns = getTemplateItemColumns(snapshot.itemRows);
-  const categoryColumns = getTemplateSummaryColumns(snapshot.categoryRows);
-  const familyColumns = getTemplateSummaryColumns(snapshot.familyRows);
+  const visibleItemRows = getWhatsappTemplateItemRows(snapshot.itemRows);
+  const itemOverflow = getWhatsappTemplateItemOverflow(snapshot.itemRows);
+  const visibleCategoryRows = getWhatsappTemplateCategoryRows(snapshot.categoryRows);
+  const visibleFamilyRows = getWhatsappTemplateFamilyRows(snapshot.familyRows);
+  const itemColumns = getTemplateItemColumns(visibleItemRows);
+  const categoryColumns = getTemplateSummaryColumns(visibleCategoryRows);
+  const familyColumns = getTemplateSummaryColumns(visibleFamilyRows);
 
   return (
     <div
@@ -708,7 +786,7 @@ function WhatsappTemplateProductionPlanImage({
         flexDirection: "column",
         width: "100%",
         height: "100%",
-        padding: 28,
+        padding: 40,
         background: "linear-gradient(180deg, #f7f0e4 0%, #f1e6d5 54%, #ecdec9 100%)",
         color: "#1f1c17",
         fontFamily:
@@ -759,7 +837,7 @@ function WhatsappTemplateProductionPlanImage({
               letterSpacing: "-0.04em",
             }}
           >
-            Morning Dispatch Snapshot
+            Production Plan Snapshot
           </div>
           <div
             style={{
@@ -769,7 +847,7 @@ function WhatsappTemplateProductionPlanImage({
               color: "#6f624f",
             }}
           >
-            Full backlog packed into a WhatsApp-friendly layout.
+            Cropping-safe WhatsApp summary of the current Tycoon backlog.
           </div>
         </div>
 
@@ -793,16 +871,16 @@ function WhatsappTemplateProductionPlanImage({
       <div
         style={{
           display: "flex",
-          flexDirection: "column",
           flex: 1,
-          minHeight: 0,
           gap: 14,
+          minHeight: 0,
         }}
       >
         <div
           style={{
             display: "flex",
             flexDirection: "column",
+            flex: 1.6,
             padding: 16,
             borderRadius: 24,
             border: "1px solid rgba(124, 92, 47, 0.12)",
@@ -857,11 +935,30 @@ function WhatsappTemplateProductionPlanImage({
               </div>
             ))}
           </div>
+
+          {itemOverflow.hiddenCount > 0 && (
+            <div
+              style={{
+                display: "flex",
+                marginTop: 10,
+                padding: "0 6px",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#6f624f",
+              }}
+            >
+              {`+${itemOverflow.hiddenCount} more items • ${formatCount(
+                itemOverflow.hiddenPending
+              )} pcs pending in the portal`}
+            </div>
+          )}
         </div>
 
         <div
           style={{
             display: "flex",
+            flexDirection: "column",
+            flex: 1,
             gap: 14,
             minWidth: 0,
           }}
@@ -893,7 +990,7 @@ export function createProductionPlanImageResponse(
   if (variant === "whatsapp-template") {
     return new ImageResponse(<WhatsappTemplateProductionPlanImage snapshot={snapshot} />, {
       width: TEMPLATE_IMAGE_WIDTH,
-      height: TEMPLATE_IMAGE_HEIGHT,
+      height: estimateWhatsappTemplateHeight(snapshot),
     });
   }
 

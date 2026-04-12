@@ -90,6 +90,46 @@ function isExcludedDemandCategory(cat: any) {
   return isSpareCategory(cat) || isUncategorised(cat);
 }
 
+function safeFirst(rel: any) {
+  if (!rel) return null;
+  if (Array.isArray(rel)) return rel[0] ?? null;
+  return rel;
+}
+
+function clampDispatchedQty(ordered: any, raw: any) {
+  const orderedNum = Number(ordered ?? 0);
+  let dispatched = Number(raw ?? 0);
+
+  if (Number.isNaN(dispatched) || dispatched < 0) dispatched = 0;
+  if (!Number.isNaN(orderedNum) && dispatched > orderedNum) dispatched = orderedNum;
+
+  return dispatched;
+}
+
+const QUERY_PAGE_SIZE = 1000;
+
+async function fetchAllRows<T>(
+  loadPage: (from: number, to: number) => Promise<{ data: T[] | null; error: any }>
+) {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + QUERY_PAGE_SIZE - 1;
+    const { data, error } = await loadPage(from, to);
+
+    if (error) return { data: null, error };
+
+    const page = data || [];
+    rows.push(...page);
+
+    if (page.length < QUERY_PAGE_SIZE) break;
+    from += QUERY_PAGE_SIZE;
+  }
+
+  return { data: rows, error: null };
+}
+
 function formatIstDateLabel(date: Date = new Date()) {
   return new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
@@ -195,37 +235,35 @@ function SalesChartCard({
     setLoading(true);
     setError(null);
 
-    // Default: last 60 days if no dispatch date filter set
-    const today = new Date();
-    const defaultFrom = new Date();
-    defaultFrom.setDate(today.getDate() - 59);
-
-    const fromISO = dispatchFrom || defaultFrom.toISOString().slice(0, 10);
-    const toISO = dispatchTo || today.toISOString().slice(0, 10);
-
-    const { data, error } = await supabase
-      .from("dispatch_events")
-      .select(
-        `
-        id,
-        dispatched_at,
-        dispatched_qty,
-        order_lines:order_line_id (
-          dealer_rate_at_order,
-          items (
-            name,
-            company,
-            category
+    const result = await fetchAllRows<any>((from, to) => {
+      let q = supabase
+        .from("dispatch_events")
+        .select(
+          `
+          id,
+          dispatched_at,
+          dispatched_qty,
+          order_lines:order_line_id (
+            dealer_rate_at_order,
+            items (
+              name,
+              company,
+              category
+            )
           )
+        `
         )
-      `
-      )
-      .gte("dispatched_at", fromISO)
-      .lte("dispatched_at", toISO)
-      .order("dispatched_at", { ascending: true });
+        .order("dispatched_at", { ascending: true })
+        .range(from, to);
 
-    if (error) {
-      console.error("Error loading sales from dispatch_events", error);
+      if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
+      if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+
+      return q;
+    });
+
+    if (result.error) {
+      console.error("Error loading sales from dispatch_events", result.error);
       setError("Could not load sales data.");
       setData([]);
       setLoading(false);
@@ -238,7 +276,7 @@ function SalesChartCard({
       { qty: number; value: number; items: Record<string, number> }
     > = {};
 
-    (data || []).forEach((row: any) => {
+    (result.data || []).forEach((row: any) => {
       const dateStr = row.dispatched_at;
       if (!dateStr) return;
 
@@ -463,6 +501,7 @@ export default function DashboardPage() {
   >("pending");
   const [backlogShowAll, setBacklogShowAll] = useState(false);
   const [planImageExporting, setPlanImageExporting] = useState(false);
+  const [planWhatsAppSending, setPlanWhatsAppSending] = useState(false);
   const [planImageDateLabel, setPlanImageDateLabel] = useState(() =>
     formatIstDateLabel(new Date())
   );
@@ -638,27 +677,62 @@ export default function DashboardPage() {
   async function loadSalesTotals() {
     setSalesTotals((s) => ({ ...s, loading: true }));
 
-    let q = supabase
-      .from("dispatch_events")
-      .select(
-        `
-        dispatched_at,
-        dispatched_qty,
-        order_lines:order_line_id (
-          order_id,
-          dealer_rate_at_order,
-          items (
-            company,
-            category
+    const isAllTime = !dispatchFrom && !dispatchTo;
+    let data: any[] | null = null;
+    let error: any = null;
+
+    if (isAllTime) {
+      const result = await fetchAllRows<any>((from, to) =>
+        supabase
+          .from("orders")
+          .select(
+            `
+            id,
+            order_lines (
+              qty,
+              dispatched_qty,
+              dealer_rate_at_order,
+              items (
+                company,
+                category
+              )
+            )
+          `
           )
-        )
-      `
+          .range(from, to)
       );
 
-    if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
-    if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+      data = result.data;
+      error = result.error;
+    } else {
+      const result = await fetchAllRows<any>((from, to) => {
+        let q = supabase
+          .from("dispatch_events")
+          .select(
+            `
+            dispatched_at,
+            dispatched_qty,
+            order_lines:order_line_id (
+              order_id,
+              dealer_rate_at_order,
+              items (
+                company,
+                category
+              )
+            )
+          `
+          )
+          .range(from, to);
 
-    const { data, error } = await q;
+        if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
+        if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+
+        return q;
+      });
+
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) {
       console.error("Error loading sales totals", error);
@@ -670,28 +744,43 @@ export default function DashboardPage() {
     let value = 0;
     const orderSet = new Set<string>();
 
-    (data || []).forEach((row: any) => {
-      const dqty = Number(row.dispatched_qty ?? 0);
-      if (!dqty || dqty <= 0) return;
+    if (isAllTime) {
+      (data || []).forEach((order: any) => {
+        (order?.order_lines || []).forEach((line: any) => {
+          const item = safeFirst(line?.items);
+          if (item?.company !== "Tycoon") return;
+          if (isSpareCategory(item?.category)) return;
 
-      const line = row.order_lines;
-      const itemRel = line?.items;
-      const item =
-        Array.isArray(itemRel) && itemRel.length > 0
-          ? itemRel[0]
-          : itemRel || null;
+          const dqty = clampDispatchedQty(line?.qty, line?.dispatched_qty);
+          if (!dqty || dqty <= 0) return;
 
-      if (item?.company !== "Tycoon") return;
+          qty += dqty;
 
-      if (isSpareCategory(item?.category)) return;
+          const rate = Number(line?.dealer_rate_at_order ?? 0);
+          value += dqty * rate;
 
-      qty += dqty;
+          if (order?.id) orderSet.add(order.id);
+        });
+      });
+    } else {
+      (data || []).forEach((row: any) => {
+        const dqty = Number(row.dispatched_qty ?? 0);
+        if (!dqty || dqty <= 0) return;
 
-      const rate = Number(line?.dealer_rate_at_order ?? 0);
-      value += dqty * rate;
+        const line = row.order_lines;
+        const item = safeFirst(line?.items);
 
-      if (line?.order_id) orderSet.add(line.order_id);
-    });
+        if (item?.company !== "Tycoon") return;
+        if (isSpareCategory(item?.category)) return;
+
+        qty += dqty;
+
+        const rate = Number(line?.dealer_rate_at_order ?? 0);
+        value += dqty * rate;
+
+        if (line?.order_id) orderSet.add(line.order_id);
+      });
+    }
 
     setSalesTotals({ qty, value, ordersServed: orderSet.size, loading: false });
   }
@@ -699,27 +788,62 @@ export default function DashboardPage() {
   async function loadSalesTable() {
     setSalesTable((s) => ({ ...s, loading: true }));
 
-    let q = supabase
-      .from("dispatch_events")
-      .select(
-        `
-        dispatched_at,
-        dispatched_qty,
-        order_lines:order_line_id (
-          dealer_rate_at_order,
-          items (
-            name,
-            company,
-            category
+    const isAllTime = !dispatchFrom && !dispatchTo;
+    let data: any[] | null = null;
+    let error: any = null;
+
+    if (isAllTime) {
+      const result = await fetchAllRows<any>((from, to) =>
+        supabase
+          .from("orders")
+          .select(
+            `
+            order_lines (
+              qty,
+              dispatched_qty,
+              dealer_rate_at_order,
+              items (
+                name,
+                company,
+                category
+              )
+            )
+          `
           )
-        )
-      `
+          .range(from, to)
       );
 
-    if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
-    if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+      data = result.data;
+      error = result.error;
+    } else {
+      const result = await fetchAllRows<any>((from, to) => {
+        let q = supabase
+          .from("dispatch_events")
+          .select(
+            `
+            dispatched_at,
+            dispatched_qty,
+            order_lines:order_line_id (
+              dealer_rate_at_order,
+              items (
+                name,
+                company,
+                category
+              )
+            )
+          `
+          )
+          .range(from, to);
 
-    const { data, error } = await q;
+        if (dispatchFrom) q = q.gte("dispatched_at", dispatchFrom);
+        if (dispatchTo) q = q.lte("dispatched_at", dispatchTo);
+
+        return q;
+      });
+
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) {
       console.error("Error loading sales table", error);
@@ -734,40 +858,66 @@ export default function DashboardPage() {
 
     const byCat = new Map<string, { category: string; qty: number; value: number }>();
 
-    (data || []).forEach((row: any) => {
-      const dqty = Number(row.dispatched_qty ?? 0);
-      if (!dqty || dqty <= 0) return;
+    if (isAllTime) {
+      (data || []).forEach((order: any) => {
+        (order?.order_lines || []).forEach((line: any) => {
+          const item = safeFirst(line?.items);
+          if ((item?.company || "Unknown") !== "Tycoon") return;
+          if (isSpareCategory(item?.category)) return;
 
-      const line = row.order_lines;
-      const itemRel = line?.items;
-      const item =
-        Array.isArray(itemRel) && itemRel.length > 0
-          ? itemRel[0]
-          : itemRel || null;
+          const dqty = clampDispatchedQty(line?.qty, line?.dispatched_qty);
+          if (!dqty || dqty <= 0) return;
 
-      if ((item?.company || "Unknown") !== "Tycoon") return;
+          const itemName = item?.name || "Unknown item";
+          const category = item?.category || "Uncategorised";
+          const rate = Number(line?.dealer_rate_at_order ?? 0);
+          const v = dqty * rate;
 
-      if (isSpareCategory(item?.category)) return;
+          if (!byItem.has(itemName)) {
+            byItem.set(itemName, { item: itemName, category, qty: 0, value: 0 });
+          }
+          const it = byItem.get(itemName)!;
+          it.qty += dqty;
+          it.value += v;
 
-      const itemName = item?.name || "Unknown item";
-      const category = item?.category || "Uncategorised";
+          const catKey = category;
+          if (!byCat.has(catKey)) byCat.set(catKey, { category: catKey, qty: 0, value: 0 });
+          const ct = byCat.get(catKey)!;
+          ct.qty += dqty;
+          ct.value += v;
+        });
+      });
+    } else {
+      (data || []).forEach((row: any) => {
+        const dqty = Number(row.dispatched_qty ?? 0);
+        if (!dqty || dqty <= 0) return;
 
-      const rate = Number(line?.dealer_rate_at_order ?? 0);
-      const v = dqty * rate;
+        const line = row.order_lines;
+        const item = safeFirst(line?.items);
 
-      if (!byItem.has(itemName)) {
-        byItem.set(itemName, { item: itemName, category, qty: 0, value: 0 });
-      }
-      const it = byItem.get(itemName)!;
-      it.qty += dqty;
-      it.value += v;
+        if ((item?.company || "Unknown") !== "Tycoon") return;
+        if (isSpareCategory(item?.category)) return;
 
-      const catKey = category;
-      if (!byCat.has(catKey)) byCat.set(catKey, { category: catKey, qty: 0, value: 0 });
-      const ct = byCat.get(catKey)!;
-      ct.qty += dqty;
-      ct.value += v;
-    });
+        const itemName = item?.name || "Unknown item";
+        const category = item?.category || "Uncategorised";
+
+        const rate = Number(line?.dealer_rate_at_order ?? 0);
+        const v = dqty * rate;
+
+        if (!byItem.has(itemName)) {
+          byItem.set(itemName, { item: itemName, category, qty: 0, value: 0 });
+        }
+        const it = byItem.get(itemName)!;
+        it.qty += dqty;
+        it.value += v;
+
+        const catKey = category;
+        if (!byCat.has(catKey)) byCat.set(catKey, { category: catKey, qty: 0, value: 0 });
+        const ct = byCat.get(catKey)!;
+        ct.qty += dqty;
+        ct.value += v;
+      });
+    }
 
     const itemRows = Array.from(byItem.values());
     const catRows = Array.from(byCat.values());
@@ -1482,6 +1632,48 @@ export default function DashboardPage() {
       alert("Could not export the production plan image.");
     } finally {
       setPlanImageExporting(false);
+    }
+  }
+
+  async function sendTycoonProductionPlanToWhatsApp() {
+    if (!tycoonProductionPlanRows.length) {
+      alert("No Tycoon pending items to send.");
+      return;
+    }
+
+    setPlanWhatsAppSending(true);
+
+    try {
+      const response = await fetch("/api/admin/production-plan-whatsapp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          slot: "manual",
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const errorMessage =
+          typeof payload?.error === "string" && payload.error.trim() !== ""
+            ? payload.error.trim()
+            : "Could not send the production plan to WhatsApp.";
+        throw new Error(errorMessage);
+      }
+
+      alert("Production plan sent to WhatsApp.");
+    } catch (error) {
+      console.error("Error sending Tycoon production plan to WhatsApp", error);
+      const message =
+        error instanceof Error && error.message.trim() !== ""
+          ? error.message
+          : "Could not send the production plan to WhatsApp.";
+      alert(message);
+    } finally {
+      setPlanWhatsAppSending(false);
     }
   }
 
@@ -2362,6 +2554,23 @@ export default function DashboardPage() {
                   }}
                 >
                   {planImageExporting ? "Preparing Image..." : "Download Plan Image"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={sendTycoonProductionPlanToWhatsApp}
+                  disabled={planWhatsAppSending || tycoonProductionPlanRows.length === 0}
+                  style={{
+                    ...uiTheme.ghostButton,
+                    background: "#25D366",
+                    borderColor: "#25D366",
+                    color: "#0f172a",
+                    ...(planWhatsAppSending || tycoonProductionPlanRows.length === 0
+                      ? { opacity: 0.6, cursor: "not-allowed" }
+                      : {}),
+                  }}
+                >
+                  {planWhatsAppSending ? "Sending to WhatsApp..." : "Send to WhatsApp"}
                 </button>
 
                 <button
