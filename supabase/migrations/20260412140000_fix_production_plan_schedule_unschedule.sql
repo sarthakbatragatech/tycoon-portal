@@ -1,24 +1,3 @@
-create extension if not exists pg_net with schema extensions;
-create extension if not exists pg_cron with schema pg_catalog;
-
-create schema if not exists automation;
-
-create table if not exists automation.production_plan_whatsapp_runs (
-  id uuid primary key default gen_random_uuid(),
-  slot text not null check (slot in ('morning', 'evening', 'manual')),
-  status text not null check (status in ('sent', 'failed', 'dry_run')),
-  recipient text,
-  image_url text,
-  message_id text,
-  request_payload jsonb,
-  response_payload jsonb,
-  error_message text,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists production_plan_whatsapp_runs_created_at_idx
-  on automation.production_plan_whatsapp_runs (created_at desc);
-
 create or replace function automation.schedule_production_plan_whatsapp_jobs(
   app_url text,
   automation_secret text,
