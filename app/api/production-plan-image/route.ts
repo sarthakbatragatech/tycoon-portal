@@ -3,6 +3,7 @@ import { loadProductionPlanSnapshot } from "@/lib/server/production-plan";
 import {
   createProductionPlanImageResponse,
   type ProductionPlanImageVariant,
+  resolveProductionPlanWhatsappLayout,
 } from "@/lib/server/production-plan-image";
 
 export const dynamic = "force-dynamic";
@@ -40,10 +41,13 @@ export async function GET(request: NextRequest) {
   const variantParam = request.nextUrl.searchParams.get("variant");
   const variant: ProductionPlanImageVariant =
     variantParam === "whatsapp-template" ? "whatsapp-template" : "default";
+  const whatsappLayout = resolveProductionPlanWhatsappLayout(
+    request.nextUrl.searchParams.get("layout")
+  );
 
   try {
     const snapshot = await loadProductionPlanSnapshot();
-    const response = createProductionPlanImageResponse(snapshot, variant);
+    const response = createProductionPlanImageResponse(snapshot, variant, whatsappLayout);
     response.headers.set(
       "Cache-Control",
       "public, max-age=60, s-maxage=60, stale-while-revalidate=300"

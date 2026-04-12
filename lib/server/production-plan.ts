@@ -173,6 +173,10 @@ export function formatIstDateFilePart(date: Date = new Date()) {
   return `${pick("year")}-${pick("month")}-${pick("day")}`;
 }
 
+export function getProductionPlanDate(date: Date = new Date()) {
+  return new Date(date.getTime() + 24 * 60 * 60 * 1000);
+}
+
 export function splitRowsIntoColumns<T>(rows: T[], columnCount: number) {
   if (!rows.length) return [] as T[][];
 
@@ -481,6 +485,7 @@ export async function resolveProductionPlanFamilyRows(inputRows: ProductionPlanI
 
 export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapshot> {
   const generatedAt = new Date();
+  const planDate = getProductionPlanDate(generatedAt);
   const itemRows = await loadTycoonProductionPlanRows();
   const fallbackFamilyRows = buildFallbackProductionPlanFamilyRows(itemRows);
 
@@ -502,8 +507,8 @@ export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapsh
 
   return {
     generatedAtIso: generatedAt.toISOString(),
-    dateLabel: formatIstDateLabel(generatedAt),
-    fileDatePart: formatIstDateFilePart(generatedAt),
+    dateLabel: formatIstDateLabel(planDate),
+    fileDatePart: formatIstDateFilePart(planDate),
     totalPending: itemRows.reduce((sum, row) => sum + row.pending, 0),
     itemCount: itemRows.length,
     itemRows,

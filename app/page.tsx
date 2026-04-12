@@ -152,6 +152,10 @@ function formatIstDateFilePart(date: Date = new Date()) {
   return `${pick("year")}-${pick("month")}-${pick("day")}`;
 }
 
+function getProductionPlanDate(date: Date = new Date()) {
+  return new Date(date.getTime() + 24 * 60 * 60 * 1000);
+}
+
 function splitRowsIntoColumns(rows: any[], columnCount: number) {
   if (!rows.length) return [];
 
@@ -503,7 +507,7 @@ export default function DashboardPage() {
   const [planImageExporting, setPlanImageExporting] = useState(false);
   const [planWhatsAppSending, setPlanWhatsAppSending] = useState(false);
   const [planImageDateLabel, setPlanImageDateLabel] = useState(() =>
-    formatIstDateLabel(new Date())
+    formatIstDateLabel(getProductionPlanDate(new Date()))
   );
   const [tycoonPlanFamilyRows, setTycoonPlanFamilyRows] = useState<any[]>([]);
   const [planFamilyRowsLoading, setPlanFamilyRowsLoading] = useState(false);
@@ -1570,7 +1574,8 @@ export default function DashboardPage() {
     }
 
     const now = new Date();
-    setPlanImageDateLabel(formatIstDateLabel(now));
+    const planDate = getProductionPlanDate(now);
+    setPlanImageDateLabel(formatIstDateLabel(planDate));
     setPlanImageExporting(true);
 
     try {
@@ -1623,7 +1628,7 @@ export default function DashboardPage() {
       const url = canvas.toDataURL("image/png");
       const link = document.createElement("a");
       link.href = url;
-      link.download = `tycoon-production-plan-${formatIstDateFilePart(now)}.png`;
+      link.download = `tycoon-production-plan-${formatIstDateFilePart(planDate)}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

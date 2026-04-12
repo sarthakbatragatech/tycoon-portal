@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveProductionPlanWhatsappLayout } from "@/lib/server/production-plan-image";
 import { loadProductionPlanSnapshot } from "@/lib/server/production-plan";
 
 export type ProductionPlanWhatsAppSlot = "morning" | "evening" | "manual";
@@ -65,7 +66,11 @@ async function insertDeliveryLog(payload: {
   }
 }
 
-function buildImageUrl(snapshotIso: string, variant: DeliveryImageVariant) {
+function buildImageUrl(
+  snapshotIso: string,
+  variant: DeliveryImageVariant,
+  whatsappLayout: ReturnType<typeof resolveProductionPlanWhatsappLayout>
+) {
   const appBaseUrl = getRequiredEnv("APP_BASE_URL");
   const imageToken = getRequiredEnv("PRODUCTION_PLAN_IMAGE_TOKEN");
 
@@ -81,6 +86,7 @@ function buildImageUrl(snapshotIso: string, variant: DeliveryImageVariant) {
   imageUrl.searchParams.set("ts", snapshotIso);
   if (variant === "whatsapp-template") {
     imageUrl.searchParams.set("variant", "whatsapp-template");
+    imageUrl.searchParams.set("layout", whatsappLayout);
   }
 
   return {
@@ -167,10 +173,13 @@ export async function sendProductionPlanWhatsApp(args?: {
   const graphVersion = getRequiredEnv("WHATSAPP_GRAPH_API_VERSION");
   const templateName = getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_TEMPLATE_NAME");
   const templateLanguage = getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_TEMPLATE_LANG") || "en";
+  const whatsappLayout = resolveProductionPlanWhatsappLayout(
+    getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_LAYOUT")
+  );
   const imageVariant: DeliveryImageVariant = templateName
     ? "whatsapp-template"
     : "default";
-  const imageResult = buildImageUrl(snapshot.generatedAtIso, imageVariant);
+  const imageResult = buildImageUrl(snapshot.generatedAtIso, imageVariant, whatsappLayout);
 
   if (!imageResult.ok) {
     await insertDeliveryLog({
@@ -223,6 +232,7 @@ export async function sendProductionPlanWhatsApp(args?: {
     familySource: snapshot.familySource,
     itemCount: snapshot.itemCount,
     totalPending: snapshot.totalPending,
+    whatsappLayout,
   };
 
   if (dryRun) {
