@@ -1,7 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const AUTH_FREE_PATHS = new Set(["/login", "/api/auth/complete-setup"]);
+const AUTH_FREE_PATHS = new Set([
+  "/login",
+  "/api/auth/complete-setup",
+  "/api/production-plan-image",
+  "/api/internal/production-plan-whatsapp",
+]);
 
 function isReadOnlyAllowedPath(pathname: string) {
   if (pathname === "/dispatch-planning") return true;
