@@ -9,7 +9,11 @@ import {
   splitRowsIntoColumns,
 } from "@/lib/server/production-plan";
 
-const IMAGE_WIDTH = 1600;
+const DEFAULT_IMAGE_WIDTH = 1600;
+const TEMPLATE_IMAGE_WIDTH = 1600;
+const TEMPLATE_IMAGE_HEIGHT = 900;
+
+export type ProductionPlanImageVariant = "default" | "whatsapp-template";
 
 function formatCount(value: number) {
   return Number(value ?? 0).toLocaleString("en-IN");
@@ -20,8 +24,18 @@ function getItemColumns(rows: ProductionPlanRow[]) {
   return splitRowsIntoColumns(rows, columnCount);
 }
 
+function getTemplateItemColumns(rows: ProductionPlanRow[]) {
+  const columnCount = rows.length > 36 ? 4 : rows.length > 12 ? 3 : 2;
+  return splitRowsIntoColumns(rows, columnCount);
+}
+
 function getSummaryColumns<T>(rows: T[]) {
   const columnCount = rows.length > 8 ? 2 : 1;
+  return splitRowsIntoColumns(rows, columnCount);
+}
+
+function getTemplateSummaryColumns<T>(rows: T[]) {
+  const columnCount = rows.length > 10 ? 2 : 1;
   return splitRowsIntoColumns(rows, columnCount);
 }
 
@@ -78,6 +92,223 @@ function SectionHeader({ label, value }: { label: string; value: string }) {
         }}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function CompactMetricCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        padding: "16px 18px",
+        borderRadius: 22,
+        border: "1px solid rgba(124, 92, 47, 0.12)",
+        background: "rgba(255, 251, 244, 0.86)",
+        minWidth: 0,
+        flex: 1,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: "#7c5c2f",
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          fontSize: 28,
+          fontWeight: 900,
+          letterSpacing: "-0.04em",
+          color: "#1f1c17",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function CompactItemCard({
+  title,
+  badge,
+}: {
+  title: string;
+  badge: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "10px 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(124, 92, 47, 0.08)",
+        background: "rgba(255, 255, 255, 0.86)",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          minWidth: 0,
+          fontSize: 14,
+          fontWeight: 650,
+          color: "#1f1c17",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {title}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 82,
+          padding: "7px 10px",
+          borderRadius: 999,
+          background: "#264734",
+          color: "#f9f4ea",
+          fontSize: 13,
+          fontWeight: 800,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {badge}
+      </div>
+    </div>
+  );
+}
+
+function CompactSummaryListCard<T>({
+  title,
+  rows,
+  getLabel,
+  getValue,
+}: {
+  title: string;
+  rows: T[][];
+  getLabel: (row: T) => string;
+  getValue: (row: T) => string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minWidth: 0,
+        padding: 16,
+        borderRadius: 22,
+        border: "1px solid rgba(124, 92, 47, 0.12)",
+        background: "rgba(255, 252, 247, 0.8)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "#7c5c2f",
+          marginBottom: 10,
+        }}
+      >
+        {title}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          minWidth: 0,
+        }}
+      >
+        {rows.map((column, columnIndex) => (
+          <div
+            key={`${title}-${columnIndex}`}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {column.map((row, rowIndex) => (
+              <div
+                key={`${title}-${columnIndex}-${rowIndex}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "9px 10px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(124, 92, 47, 0.08)",
+                  background: "rgba(255, 255, 255, 0.88)",
+                  minWidth: 0,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 13,
+                    fontWeight: 650,
+                    color: "#1f1c17",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {getLabel(row)}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minWidth: 70,
+                    padding: "6px 8px",
+                    borderRadius: 999,
+                    background: "#264734",
+                    color: "#f9f4ea",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {getValue(row)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -461,9 +692,213 @@ function ProductionPlanImage({ snapshot }: { snapshot: ProductionPlanSnapshot })
   );
 }
 
-export function createProductionPlanImageResponse(snapshot: ProductionPlanSnapshot) {
+function WhatsappTemplateProductionPlanImage({
+  snapshot,
+}: {
+  snapshot: ProductionPlanSnapshot;
+}) {
+  const itemColumns = getTemplateItemColumns(snapshot.itemRows);
+  const categoryColumns = getTemplateSummaryColumns(snapshot.categoryRows);
+  const familyColumns = getTemplateSummaryColumns(snapshot.familyRows);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        padding: 28,
+        background: "linear-gradient(180deg, #f7f0e4 0%, #f1e6d5 54%, #ecdec9 100%)",
+        color: "#1f1c17",
+        fontFamily:
+          '"Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "stretch",
+          gap: 16,
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            flex: 1.4,
+            padding: "20px 22px",
+            borderRadius: 24,
+            border: "1px solid rgba(124, 92, 47, 0.14)",
+            background: "rgba(255, 251, 244, 0.82)",
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              color: "#7c5c2f",
+              marginBottom: 10,
+            }}
+          >
+            Tycoon Production Planning
+          </div>
+          <div
+            style={{
+              display: "flex",
+              fontSize: 34,
+              fontWeight: 900,
+              lineHeight: 1,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Morning Dispatch Snapshot
+          </div>
+          <div
+            style={{
+              display: "flex",
+              marginTop: 10,
+              fontSize: 15,
+              color: "#6f624f",
+            }}
+          >
+            Full backlog packed into a WhatsApp-friendly layout.
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flex: 1,
+            gap: 12,
+            minWidth: 0,
+          }}
+        >
+          <CompactMetricCard label="Date" value={snapshot.dateLabel} />
+          <CompactMetricCard
+            label="Pending Qty"
+            value={`${formatCount(snapshot.totalPending)} pcs`}
+          />
+          <CompactMetricCard label="Active Items" value={formatCount(snapshot.itemCount)} />
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          minHeight: 0,
+          gap: 14,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            padding: 16,
+            borderRadius: 24,
+            border: "1px solid rgba(124, 92, 47, 0.12)",
+            background: "rgba(255, 252, 247, 0.8)",
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: "0 6px 8px",
+              borderBottom: "1px solid rgba(124, 92, 47, 0.18)",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#7c5c2f",
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ display: "flex" }}>Item</div>
+            <div style={{ display: "flex" }}>Pending</div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              minWidth: 0,
+            }}
+          >
+            {itemColumns.map((column, columnIndex) => (
+              <div
+                key={`template-items-${columnIndex}`}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                {column.map((row) => (
+                  <CompactItemCard
+                    key={`${columnIndex}-${row.item}`}
+                    title={row.item}
+                    badge={`${formatCount(row.pending)} pcs`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 14,
+            minWidth: 0,
+          }}
+        >
+          <CompactSummaryListCard<ProductionPlanCategoryRow>
+            title="Category"
+            rows={categoryColumns}
+            getLabel={(row) => row.category}
+            getValue={(row) => `${formatCount(row.pending)} pcs`}
+          />
+          <CompactSummaryListCard<ProductionPlanFamilyRow>
+            title={
+              snapshot.familySource === "inventory" ? "BOM Family" : "BOM Family (fallback)"
+            }
+            rows={familyColumns}
+            getLabel={(row) => row.family}
+            getValue={(row) => `${formatCount(row.pending)} pcs`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function createProductionPlanImageResponse(
+  snapshot: ProductionPlanSnapshot,
+  variant: ProductionPlanImageVariant = "default"
+) {
+  if (variant === "whatsapp-template") {
+    return new ImageResponse(<WhatsappTemplateProductionPlanImage snapshot={snapshot} />, {
+      width: TEMPLATE_IMAGE_WIDTH,
+      height: TEMPLATE_IMAGE_HEIGHT,
+    });
+  }
+
   return new ImageResponse(<ProductionPlanImage snapshot={snapshot} />, {
-    width: IMAGE_WIDTH,
+    width: DEFAULT_IMAGE_WIDTH,
     height: estimateHeight(snapshot),
   });
 }

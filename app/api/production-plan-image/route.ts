@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadProductionPlanSnapshot } from "@/lib/server/production-plan";
-import { createProductionPlanImageResponse } from "@/lib/server/production-plan-image";
+import {
+  createProductionPlanImageResponse,
+  type ProductionPlanImageVariant,
+} from "@/lib/server/production-plan-image";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +37,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: tokenCheck.error }, { status: tokenCheck.status });
   }
 
+  const variantParam = request.nextUrl.searchParams.get("variant");
+  const variant: ProductionPlanImageVariant =
+    variantParam === "whatsapp-template" ? "whatsapp-template" : "default";
+
   try {
     const snapshot = await loadProductionPlanSnapshot();
-    const response = createProductionPlanImageResponse(snapshot);
+    const response = createProductionPlanImageResponse(snapshot, variant);
     response.headers.set(
       "Cache-Control",
       "public, max-age=60, s-maxage=60, stale-while-revalidate=300"

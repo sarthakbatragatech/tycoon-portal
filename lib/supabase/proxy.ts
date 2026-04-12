@@ -11,6 +11,7 @@ const AUTH_FREE_PATHS = new Set([
 function isReadOnlyAllowedPath(pathname: string) {
   if (pathname === "/dispatch-planning") return true;
   if (pathname === "/profile") return true;
+  if (pathname === "/api/orders/viewer-status") return true;
   if (pathname === "/orders") return false;
   if (pathname === "/orders/new") return false;
   if (pathname.startsWith("/orders/")) return true;

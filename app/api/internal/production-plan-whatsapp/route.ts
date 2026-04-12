@@ -9,6 +9,8 @@ type DeliverySlot = "morning" | "evening" | "manual";
 
 type DeliveryStatus = "sent" | "failed" | "dry_run";
 
+type DeliveryImageVariant = "default" | "whatsapp-template";
+
 function getSlotLabel(slot: DeliverySlot) {
   if (slot === "morning") return "Morning";
   if (slot === "evening") return "Evening";
@@ -85,7 +87,7 @@ async function insertDeliveryLog(payload: {
   }
 }
 
-function buildImageUrl(snapshotIso: string) {
+function buildImageUrl(snapshotIso: string, variant: DeliveryImageVariant) {
   const appBaseUrl = getRequiredEnv("APP_BASE_URL");
   const imageToken = getRequiredEnv("PRODUCTION_PLAN_IMAGE_TOKEN");
 
@@ -99,6 +101,9 @@ function buildImageUrl(snapshotIso: string) {
   const imageUrl = new URL("/api/production-plan-image", appBaseUrl);
   imageUrl.searchParams.set("token", imageToken);
   imageUrl.searchParams.set("ts", snapshotIso);
+  if (variant === "whatsapp-template") {
+    imageUrl.searchParams.set("variant", "whatsapp-template");
+  }
 
   return {
     ok: true as const,
@@ -175,7 +180,17 @@ export async function POST(request: NextRequest) {
   const dryRun = Boolean(body?.dryRun);
 
   const snapshot = await loadProductionPlanSnapshot();
-  const imageResult = buildImageUrl(snapshot.generatedAtIso);
+
+  const recipient = getRequiredEnv("WHATSAPP_RECIPIENT");
+  const phoneNumberId = getRequiredEnv("WHATSAPP_PHONE_NUMBER_ID");
+  const accessToken = getRequiredEnv("WHATSAPP_ACCESS_TOKEN");
+  const graphVersion = getRequiredEnv("WHATSAPP_GRAPH_API_VERSION");
+  const templateName = getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_TEMPLATE_NAME");
+  const templateLanguage = getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_TEMPLATE_LANG") || "en";
+  const imageVariant: DeliveryImageVariant = templateName
+    ? "whatsapp-template"
+    : "default";
+  const imageResult = buildImageUrl(snapshot.generatedAtIso, imageVariant);
 
   if (!imageResult.ok) {
     await insertDeliveryLog({
@@ -187,13 +202,6 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ error: imageResult.error }, { status: 503 });
   }
-
-  const recipient = getRequiredEnv("WHATSAPP_RECIPIENT");
-  const phoneNumberId = getRequiredEnv("WHATSAPP_PHONE_NUMBER_ID");
-  const accessToken = getRequiredEnv("WHATSAPP_ACCESS_TOKEN");
-  const graphVersion = getRequiredEnv("WHATSAPP_GRAPH_API_VERSION");
-  const templateName = getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_TEMPLATE_NAME");
-  const templateLanguage = getRequiredEnv("WHATSAPP_PRODUCTION_PLAN_TEMPLATE_LANG") || "en";
 
   if (!recipient || !phoneNumberId || !accessToken || !graphVersion) {
     const errorMessage =
