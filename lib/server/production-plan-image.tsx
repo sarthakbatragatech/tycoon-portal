@@ -180,10 +180,11 @@ function CompactMetricCard({
       <div
         style={{
           display: "flex",
-          fontSize: 28,
+          fontSize: 34,
           fontWeight: 900,
           letterSpacing: "-0.04em",
           color: "#1f1c17",
+          lineHeight: 1.05,
         }}
       >
         {value}
@@ -232,13 +233,11 @@ function CompactItemCard({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          minWidth: 98,
-          padding: "9px 14px",
-          borderRadius: 999,
-          background: "#264734",
-          color: "#f9f4ea",
-          fontSize: 15,
-          fontWeight: 800,
+          minWidth: 110,
+          padding: "0 0 0 12px",
+          color: "#1f1c17",
+          fontSize: 18,
+          fontWeight: 900,
           whiteSpace: "nowrap",
           flexShrink: 0,
         }}
@@ -339,13 +338,11 @@ function CompactSummaryListCard<T>({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    minWidth: 92,
-                    padding: "8px 12px",
-                    borderRadius: 999,
-                    background: "#264734",
-                    color: "#f9f4ea",
-                    fontSize: 14,
-                    fontWeight: 800,
+                    minWidth: 104,
+                    padding: "0 0 0 12px",
+                    color: "#1f1c17",
+                    fontSize: 17,
+                    fontWeight: 900,
                     whiteSpace: "nowrap",
                     flexShrink: 0,
                   }}
@@ -811,16 +808,6 @@ function WhatsappTemplateProductionPlanImage({
             }}
           >
             Production Plan Snapshot
-          </div>
-          <div
-            style={{
-              display: "flex",
-              marginTop: 10,
-              fontSize: 15,
-              color: "#6f624f",
-            }}
-          >
-            Complete Tycoon backlog snapshot for production planning.
           </div>
         </div>
 
