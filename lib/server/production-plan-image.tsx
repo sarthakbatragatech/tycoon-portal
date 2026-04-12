@@ -12,8 +12,6 @@ import {
 const DEFAULT_IMAGE_WIDTH = 1600;
 const TEMPLATE_IMAGE_WIDTH = 1600;
 const TEMPLATE_IMAGE_MIN_HEIGHT = 900;
-const WHATSAPP_TEMPLATE_MAX_ITEM_ROWS = 12;
-const WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS = 4;
 
 export type ProductionPlanImageVariant = "default" | "whatsapp-template";
 
@@ -27,7 +25,7 @@ function getItemColumns(rows: ProductionPlanRow[]) {
 }
 
 function getTemplateItemColumns(rows: ProductionPlanRow[]) {
-  const columnCount = rows.length > 8 ? 3 : 2;
+  const columnCount = rows.length > 6 ? 2 : 1;
   return splitRowsIntoColumns(rows, columnCount);
 }
 
@@ -37,52 +35,27 @@ function getSummaryColumns<T>(rows: T[]) {
 }
 
 function getTemplateSummaryColumns<T>(rows: T[]) {
-  const columnCount = rows.length > 10 ? 2 : 1;
+  const columnCount = rows.length > 8 ? 2 : 1;
   return splitRowsIntoColumns(rows, columnCount);
 }
 
 function getWhatsappTemplateItemRows(rows: ProductionPlanRow[]) {
-  return rows.slice(0, WHATSAPP_TEMPLATE_MAX_ITEM_ROWS);
+  return rows;
 }
 
 function getWhatsappTemplateItemOverflow(rows: ProductionPlanRow[]) {
-  const hiddenRows = rows.slice(WHATSAPP_TEMPLATE_MAX_ITEM_ROWS);
   return {
-    hiddenCount: hiddenRows.length,
-    hiddenPending: hiddenRows.reduce((sum, row) => sum + Number(row.pending ?? 0), 0),
+    hiddenCount: 0,
+    hiddenPending: 0,
   };
 }
 
 function getWhatsappTemplateCategoryRows(rows: ProductionPlanCategoryRow[]) {
-  if (rows.length <= WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS) return rows;
-
-  const visibleRows = rows.slice(0, WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
-  const hiddenRows = rows.slice(WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
-  const hiddenPending = hiddenRows.reduce((sum, row) => sum + Number(row.pending ?? 0), 0);
-
-  return [
-    ...visibleRows,
-    {
-      category: `+${hiddenRows.length} more`,
-      pending: hiddenPending,
-    },
-  ];
+  return rows;
 }
 
 function getWhatsappTemplateFamilyRows(rows: ProductionPlanFamilyRow[]) {
-  if (rows.length <= WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS) return rows;
-
-  const visibleRows = rows.slice(0, WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
-  const hiddenRows = rows.slice(WHATSAPP_TEMPLATE_MAX_SUMMARY_ROWS - 1);
-  const hiddenPending = hiddenRows.reduce((sum, row) => sum + Number(row.pending ?? 0), 0);
-
-  return [
-    ...visibleRows,
-    {
-      family: `+${hiddenRows.length} more`,
-      pending: hiddenPending,
-    },
-  ];
+  return rows;
 }
 
 function estimateHeight(snapshot: ProductionPlanSnapshot) {
@@ -120,14 +93,14 @@ function estimateWhatsappTemplateHeight(snapshot: ProductionPlanSnapshot) {
     0
   );
 
-  const topSectionHeight = 150;
+  const topSectionHeight = 170;
   const itemSectionHeight =
-    110 + itemRowsPerColumn * 64 + (itemOverflow.hiddenCount > 0 ? 34 : 0);
-  const lowerSectionHeight = 220 + lowerRowsPerColumn * 58;
+    130 + itemRowsPerColumn * 88 + (itemOverflow.hiddenCount > 0 ? 34 : 0);
+  const lowerSectionHeight = 150 + lowerRowsPerColumn * 74;
 
   return Math.max(
     TEMPLATE_IMAGE_MIN_HEIGHT,
-    80 + topSectionHeight + itemSectionHeight + lowerSectionHeight
+    110 + topSectionHeight + itemSectionHeight + lowerSectionHeight
   );
 }
 
@@ -232,9 +205,9 @@ function CompactItemCard({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        gap: 10,
-        padding: "10px 12px",
-        borderRadius: 14,
+        gap: 14,
+        padding: "14px 16px",
+        borderRadius: 18,
         border: "1px solid rgba(124, 92, 47, 0.08)",
         background: "rgba(255, 255, 255, 0.86)",
         minWidth: 0,
@@ -245,12 +218,11 @@ function CompactItemCard({
           display: "flex",
           flex: 1,
           minWidth: 0,
-          fontSize: 14,
-          fontWeight: 650,
+          fontSize: 17,
+          fontWeight: 700,
+          lineHeight: 1.2,
           color: "#1f1c17",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
+          whiteSpace: "normal",
         }}
       >
         {title}
@@ -260,14 +232,15 @@ function CompactItemCard({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          minWidth: 82,
-          padding: "7px 10px",
+          minWidth: 98,
+          padding: "9px 14px",
           borderRadius: 999,
           background: "#264734",
           color: "#f9f4ea",
-          fontSize: 13,
+          fontSize: 15,
           fontWeight: 800,
           whiteSpace: "nowrap",
+          flexShrink: 0,
         }}
       >
         {badge}
@@ -294,8 +267,8 @@ function CompactSummaryListCard<T>({
         flexDirection: "column",
         flex: 1,
         minWidth: 0,
-        padding: 16,
-        borderRadius: 22,
+        padding: 20,
+        borderRadius: 24,
         border: "1px solid rgba(124, 92, 47, 0.12)",
         background: "rgba(255, 252, 247, 0.8)",
       }}
@@ -339,9 +312,9 @@ function CompactSummaryListCard<T>({
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "9px 10px",
-                  borderRadius: 14,
+                  gap: 12,
+                  padding: "12px 14px",
+                  borderRadius: 16,
                   border: "1px solid rgba(124, 92, 47, 0.08)",
                   background: "rgba(255, 255, 255, 0.88)",
                   minWidth: 0,
@@ -352,12 +325,11 @@ function CompactSummaryListCard<T>({
                     display: "flex",
                     flex: 1,
                     minWidth: 0,
-                    fontSize: 13,
-                    fontWeight: 650,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    lineHeight: 1.2,
                     color: "#1f1c17",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    whiteSpace: "normal",
                   }}
                 >
                   {getLabel(row)}
@@ -367,14 +339,15 @@ function CompactSummaryListCard<T>({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    minWidth: 70,
-                    padding: "6px 8px",
+                    minWidth: 92,
+                    padding: "8px 12px",
                     borderRadius: 999,
                     background: "#264734",
                     color: "#f9f4ea",
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: 800,
                     whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
                 >
                   {getValue(row)}
@@ -847,7 +820,7 @@ function WhatsappTemplateProductionPlanImage({
               color: "#6f624f",
             }}
           >
-            Cropping-safe WhatsApp summary of the current Tycoon backlog.
+            Complete Tycoon backlog snapshot for production planning.
           </div>
         </div>
 
@@ -871,8 +844,9 @@ function WhatsappTemplateProductionPlanImage({
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
           flex: 1,
-          gap: 14,
+          gap: 18,
           minHeight: 0,
         }}
       >
@@ -880,8 +854,7 @@ function WhatsappTemplateProductionPlanImage({
           style={{
             display: "flex",
             flexDirection: "column",
-            flex: 1.6,
-            padding: 16,
+            padding: 20,
             borderRadius: 24,
             border: "1px solid rgba(124, 92, 47, 0.12)",
             background: "rgba(255, 252, 247, 0.8)",
@@ -893,24 +866,24 @@ function WhatsappTemplateProductionPlanImage({
               display: "flex",
               justifyContent: "space-between",
               gap: 12,
-              padding: "0 6px 8px",
+              padding: "0 6px 10px",
               borderBottom: "1px solid rgba(124, 92, 47, 0.18)",
               fontSize: 11,
               fontWeight: 800,
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               color: "#7c5c2f",
-              marginBottom: 10,
+              marginBottom: 14,
             }}
           >
-            <div style={{ display: "flex" }}>Item</div>
-            <div style={{ display: "flex" }}>Pending</div>
+            <div style={{ display: "flex" }}>Model</div>
+            <div style={{ display: "flex" }}>Pending Qty</div>
           </div>
 
           <div
             style={{
               display: "flex",
-              gap: 10,
+              gap: 14,
               minWidth: 0,
             }}
           >
@@ -920,7 +893,7 @@ function WhatsappTemplateProductionPlanImage({
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: 8,
+                  gap: 12,
                   flex: 1,
                   minWidth: 0,
                 }}
@@ -940,9 +913,9 @@ function WhatsappTemplateProductionPlanImage({
             <div
               style={{
                 display: "flex",
-                marginTop: 10,
+                marginTop: 12,
                 padding: "0 6px",
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: 700,
                 color: "#6f624f",
               }}
@@ -957,9 +930,8 @@ function WhatsappTemplateProductionPlanImage({
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            flex: 1,
-            gap: 14,
+            gap: 16,
+            padding: 16,
             minWidth: 0,
           }}
         >
