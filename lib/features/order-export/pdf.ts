@@ -5,6 +5,12 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
+const TYCOON_WEBSITE_URL = "https://tycoontoys.in";
+const TYCOON_MARKETING_PREFIX =
+  "For marketing material and latest updates, please visit our website ";
+const TYCOON_INSTAGRAM_URL = "https://www.instagram.com/tycoon_toyss/";
+const TYCOON_INSTAGRAM_LABEL = "Follow us on Instagram: @tycoon_toyss";
+
 /* ----------------------------- helpers ----------------------------- */
 
 function sanitizeFilePart(input: any) {
@@ -37,6 +43,34 @@ function hideLikelyPageNumbers(root: HTMLElement) {
       el.style.display = "none";
     }
   }
+}
+
+function drawInstagramLogo(pdf: jsPDF, x: number, y: number, size: number) {
+  const stripHeight = size / 4;
+
+  pdf.setFillColor(131, 58, 180);
+  pdf.roundedRect(x, y, size, size, size * 0.22, size * 0.22, "F");
+  pdf.setFillColor(193, 53, 132);
+  pdf.rect(x + 0.6, y + stripHeight, size - 1.2, stripHeight, "F");
+  pdf.setFillColor(225, 48, 108);
+  pdf.rect(x + 0.6, y + stripHeight * 2, size - 1.2, stripHeight, "F");
+  pdf.setFillColor(247, 119, 55);
+  pdf.rect(x + 0.6, y + stripHeight * 3 - 0.6, size - 1.2, stripHeight - 0.6, "F");
+
+  pdf.setDrawColor(255, 255, 255);
+  pdf.setLineWidth(0.75);
+  pdf.roundedRect(
+    x + size * 0.22,
+    y + size * 0.22,
+    size * 0.56,
+    size * 0.56,
+    size * 0.14,
+    size * 0.14,
+    "S"
+  );
+  pdf.circle(x + size * 0.5, y + size * 0.5, size * 0.14, "S");
+  pdf.setFillColor(255, 255, 255);
+  pdf.circle(x + size * 0.67, y + size * 0.33, size * 0.045, "F");
 }
 
 /* ----------------------------- types ----------------------------- */
@@ -155,12 +189,51 @@ export async function exportElementToPdf({
 
     pdf.addImage(imgData, "PNG", marginLeftPt, marginTopPt, imgW, imgH);
 
-    pdf.setFontSize(9);
+    const marketingFooterY = pageHeight - 22;
+    const socialFooterY = pageHeight - 9;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(90);
+    pdf.text(TYCOON_MARKETING_PREFIX, marginLeftPt, marketingFooterY);
+
+    const websiteX = marginLeftPt + pdf.getTextWidth(TYCOON_MARKETING_PREFIX);
+    pdf.setTextColor(37, 99, 235);
+    pdf.textWithLink(TYCOON_WEBSITE_URL, websiteX, marketingFooterY, {
+      url: TYCOON_WEBSITE_URL,
+    });
+    const websiteWidth = pdf.getTextWidth(TYCOON_WEBSITE_URL);
+    pdf.setDrawColor(37, 99, 235);
+    pdf.setLineWidth(0.35);
+    pdf.line(websiteX, marketingFooterY + 1, websiteX + websiteWidth, marketingFooterY + 1);
+
+    const instagramLogoSize = 9;
+    drawInstagramLogo(
+      pdf,
+      marginLeftPt,
+      socialFooterY - instagramLogoSize + 1.5,
+      instagramLogoSize
+    );
+
+    const instagramTextX = marginLeftPt + instagramLogoSize + 5;
+    pdf.setTextColor(193, 53, 132);
+    pdf.textWithLink(TYCOON_INSTAGRAM_LABEL, instagramTextX, socialFooterY, {
+      url: TYCOON_INSTAGRAM_URL,
+    });
+    const instagramTextWidth = pdf.getTextWidth(TYCOON_INSTAGRAM_LABEL);
+    pdf.setDrawColor(193, 53, 132);
+    pdf.line(
+      instagramTextX,
+      socialFooterY + 1,
+      instagramTextX + instagramTextWidth,
+      socialFooterY + 1
+    );
+
     pdf.setTextColor(120);
     pdf.text(
       `Page ${pageIndex + 1} of ${totalPages}`,
       pageWidth - marginRightPt,
-      pageHeight - 10,
+      socialFooterY,
       { align: "right" }
     );
   }
@@ -196,7 +269,7 @@ export async function exportOrderPdf({
     marginLeftPt: 24,
     marginRightPt: 24,
     marginTopPt: 12,
-    marginBottomPt: 22,
+    marginBottomPt: 38,
     overlapPx: 18,
   });
 }

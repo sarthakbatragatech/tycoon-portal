@@ -4,6 +4,7 @@
 import useThemeMode from "@/app/_components/useThemeMode";
 import ActivityLogCard from "./ActivityLogCard";
 import FullyDispatchedBatches from "./FullyDispatchedBatches";
+import { OrderExportItem } from "./OrderExportItem";
 import { STATUS_LABELS, STATUS_OPTIONS } from "@/lib/constants/status";
 import { formatDateShort } from "@/lib/utils/date";
 
@@ -1419,10 +1420,19 @@ export default function OrderDetailView(props: any) {
           style={{
             width: "100%",
             borderCollapse: "collapse",
+            tableLayout: "fixed",
             marginTop: 10,
             border: "1px solid #e5e7eb",
           }}
         >
+          <colgroup>
+            <col style={{ width: showExportFinancials ? "28%" : "34%" }} />
+            {showExportFinancials && <col style={{ width: "14%" }} />}
+            <col style={{ width: showExportFinancials ? "12%" : "14%" }} />
+            <col style={{ width: showExportFinancials ? "12%" : "14%" }} />
+            <col style={{ width: showExportFinancials ? "12%" : "14%" }} />
+            <col style={{ width: showExportFinancials ? "22%" : "24%" }} />
+          </colgroup>
           <thead>
             <tr style={{ background: "#f3f4f6" }}>
               {[
@@ -1465,12 +1475,11 @@ export default function OrderDetailView(props: any) {
                 >
                   <td
                     style={{
-                      padding: "9px 10px",
+                      padding: "6px 10px",
                       borderBottom: "1px solid #f1f5f9",
-                      fontWeight: 800,
                     }}
                   >
-                    {item?.name ?? "Unknown item"}
+                    <OrderExportItem item={item} />
                   </td>
                   {showExportFinancials && (
                     <td

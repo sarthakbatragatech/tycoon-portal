@@ -3,6 +3,7 @@
 "use client";
 
 import useThemeMode from "@/app/_components/useThemeMode";
+import { OrderExportItem } from "./OrderExportItem";
 
 export default function FullyDispatchedBatches({
   fullyDispatchedLines = [],
@@ -253,7 +254,16 @@ export default function FullyDispatchedBatches({
 
                       return (
                         <tr key={l.id}>
-                          <td data-label="Item" style={tdLeft}>{item?.name ?? "Unknown item"}</td>
+                          <td
+                            data-label="Item"
+                            style={isPrint ? { ...tdLeft, whiteSpace: "normal" } : tdLeft}
+                          >
+                            {isPrint ? (
+                              <OrderExportItem item={item} />
+                            ) : (
+                              item?.name ?? "Unknown item"
+                            )}
+                          </td>
                           {showRateColumn && (
                             <td data-label="Rate" style={tdCenter}>
                               {canEditRates ? (
