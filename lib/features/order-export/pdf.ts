@@ -45,6 +45,58 @@ function hideLikelyPageNumbers(root: HTMLElement) {
   }
 }
 
+type CanvasSlice = {
+  yPx: number;
+  heightPx: number;
+};
+
+function collectRowBreakpoints(root: HTMLElement, canvasHeight: number) {
+  const rootRect = root.getBoundingClientRect();
+  const rootHeight = Math.max(1, root.scrollHeight);
+  const canvasScaleY = canvasHeight / rootHeight;
+
+  return Array.from(root.querySelectorAll("tr"))
+    .map((row) => {
+      const rowRect = row.getBoundingClientRect();
+      return Math.round((rowRect.bottom - rootRect.top) * canvasScaleY);
+    })
+    .filter((point) => point > 0 && point < canvasHeight)
+    .sort((a, b) => a - b)
+    .filter((point, index, points) => index === 0 || point !== points[index - 1]);
+}
+
+function buildCanvasSlices(
+  totalHeightPx: number,
+  maxSliceHeightPx: number,
+  breakpoints: number[]
+): CanvasSlice[] {
+  const slices: CanvasSlice[] = [];
+  let startPx = 0;
+
+  while (startPx < totalHeightPx) {
+    const maxEndPx = Math.min(startPx + maxSliceHeightPx, totalHeightPx);
+    let endPx = maxEndPx;
+
+    if (maxEndPx < totalHeightPx) {
+      const minUsefulEndPx = startPx + maxSliceHeightPx * 0.55;
+      const safeBreaks = breakpoints.filter(
+        (point) => point >= minUsefulEndPx && point <= maxEndPx - 2
+      );
+
+      if (safeBreaks.length > 0) {
+        endPx = safeBreaks[safeBreaks.length - 1];
+      }
+    }
+
+    if (endPx <= startPx) endPx = maxEndPx;
+
+    slices.push({ yPx: startPx, heightPx: endPx - startPx });
+    startPx = endPx;
+  }
+
+  return slices;
+}
+
 function drawInstagramLogo(pdf: jsPDF, x: number, y: number, size: number) {
   const stripHeight = size / 4;
 
@@ -85,9 +137,6 @@ type ExportOptions = {
   marginRightPt?: number;
   marginTopPt?: number;
   marginBottomPt?: number;
-
-  // small overlap between pages to avoid "cut" rows
-  overlapPx?: number;
 };
 
 /* ------------------------ core pdf export ------------------------ */
@@ -101,8 +150,6 @@ export async function exportElementToPdf({
   marginRightPt = 24,
   marginTopPt = 14,
   marginBottomPt = 24,
-
-  overlapPx = 18,
 }: ExportOptions) {
   const element = document.getElementById(elementId) as HTMLElement | null;
   if (!element) throw new Error(`Element not found: ${elementId}`);
@@ -151,15 +198,19 @@ export async function exportElementToPdf({
 
   const pxPerPt = canvas.width / usableWidth;
   const sliceHeightPx = Math.floor(usableHeight * pxPerPt);
-  const stepPx = Math.max(1, sliceHeightPx - Math.max(0, overlapPx));
+  const fitNearSinglePage =
+    canvas.height > sliceHeightPx && canvas.height <= sliceHeightPx * 1.18;
+  const rowBreakpoints = collectRowBreakpoints(element, canvas.height);
+  const slices = fitNearSinglePage
+    ? [{ yPx: 0, heightPx: canvas.height }]
+    : buildCanvasSlices(canvas.height, sliceHeightPx, rowBreakpoints);
 
-  const totalPages = Math.max(1, Math.ceil((canvas.height - overlapPx) / stepPx));
+  const totalPages = slices.length;
 
   for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
     if (pageIndex > 0) pdf.addPage();
 
-    const yPx = pageIndex * stepPx;
-    const currentSlicePx = Math.min(sliceHeightPx, canvas.height - yPx);
+    const { yPx, heightPx: currentSlicePx } = slices[pageIndex];
 
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
@@ -184,10 +235,12 @@ export async function exportElementToPdf({
     );
 
     const imgData = pageCanvas.toDataURL("image/png");
-    const imgW = usableWidth;
-    const imgH = currentSlicePx / pxPerPt;
+    const fitScale = fitNearSinglePage ? sliceHeightPx / canvas.height : 1;
+    const imgW = usableWidth * fitScale;
+    const imgH = fitNearSinglePage ? usableHeight : currentSlicePx / pxPerPt;
+    const imgX = marginLeftPt + (usableWidth - imgW) / 2;
 
-    pdf.addImage(imgData, "PNG", marginLeftPt, marginTopPt, imgW, imgH);
+    pdf.addImage(imgData, "PNG", imgX, marginTopPt, imgW, imgH);
 
     const marketingFooterY = pageHeight - 22;
     const socialFooterY = pageHeight - 9;
@@ -270,6 +323,5 @@ export async function exportOrderPdf({
     marginRightPt: 24,
     marginTopPt: 12,
     marginBottomPt: 38,
-    overlapPx: 18,
   });
 }
