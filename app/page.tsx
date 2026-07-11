@@ -209,6 +209,7 @@ function SalesChartCard({
   const [data, setData] = useState<SalesPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const chartTheme = useMemo(
     () =>
@@ -231,11 +232,18 @@ function SalesChartCard({
   );
 
   useEffect(() => {
-    loadSales();
+    const requestId = ++requestIdRef.current;
+    loadSales(requestId);
+
+    return () => {
+      if (requestIdRef.current === requestId) {
+        requestIdRef.current += 1;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatchFrom, dispatchTo]);
 
-  async function loadSales() {
+  async function loadSales(requestId: number) {
     setLoading(true);
     setError(null);
 
@@ -265,6 +273,8 @@ function SalesChartCard({
 
       return q;
     });
+
+    if (requestId !== requestIdRef.current) return;
 
     if (result.error) {
       console.error("Error loading sales from dispatch_events", result.error);
@@ -492,8 +502,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // SALES filter (dispatch date)
-  const [dispatchFrom, setDispatchFrom] = useState<string>("");
-  const [dispatchTo, setDispatchTo] = useState<string>("");
+  const [dispatchRange, setDispatchRange] = useState({ from: "", to: "" });
+  const dispatchFrom = dispatchRange.from;
+  const dispatchTo = dispatchRange.to;
+  const salesRequestIdRef = useRef(0);
 
   // DEMAND filter (order date)
   const [orderFrom, setOrderFrom] = useState<string>("");
@@ -636,10 +648,16 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadSalesTotals();
-    loadSalesTable();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatchFrom, dispatchTo]);
+    const requestId = ++salesRequestIdRef.current;
+    loadSalesTotals(dispatchRange, requestId);
+    loadSalesTable(dispatchRange, requestId);
+
+    return () => {
+      if (salesRequestIdRef.current === requestId) {
+        salesRequestIdRef.current += 1;
+      }
+    };
+  }, [dispatchRange]);
 
   async function loadData() {
     setLoading(true);
@@ -678,9 +696,14 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  async function loadSalesTotals() {
+  async function loadSalesTotals(
+    range: { from: string; to: string },
+    requestId: number
+  ) {
     setSalesTotals((s) => ({ ...s, loading: true }));
 
+    const dispatchFrom = range.from;
+    const dispatchTo = range.to;
     const isAllTime = !dispatchFrom && !dispatchTo;
     let data: any[] | null = null;
     let error: any = null;
@@ -738,6 +761,8 @@ export default function DashboardPage() {
       error = result.error;
     }
 
+    if (requestId !== salesRequestIdRef.current) return;
+
     if (error) {
       console.error("Error loading sales totals", error);
       setSalesTotals({ qty: 0, value: 0, ordersServed: 0, loading: false });
@@ -789,9 +814,14 @@ export default function DashboardPage() {
     setSalesTotals({ qty, value, ordersServed: orderSet.size, loading: false });
   }
 
-  async function loadSalesTable() {
+  async function loadSalesTable(
+    range: { from: string; to: string },
+    requestId: number
+  ) {
     setSalesTable((s) => ({ ...s, loading: true }));
 
+    const dispatchFrom = range.from;
+    const dispatchTo = range.to;
     const isAllTime = !dispatchFrom && !dispatchTo;
     let data: any[] | null = null;
     let error: any = null;
@@ -848,6 +878,8 @@ export default function DashboardPage() {
       data = result.data;
       error = result.error;
     }
+
+    if (requestId !== salesRequestIdRef.current) return;
 
     if (error) {
       console.error("Error loading sales table", error);
@@ -943,15 +975,16 @@ export default function DashboardPage() {
     today.setHours(0, 0, 0, 0);
 
     if (mode === "all") {
-      setDispatchFrom("");
-      setDispatchTo("");
+      setDispatchRange({ from: "", to: "" });
       return;
     }
 
     if (mode === "thisMonth") {
       const from = new Date(today.getFullYear(), today.getMonth(), 1);
-      setDispatchFrom(formatDateLocal(from));
-      setDispatchTo(formatDateLocal(today));
+      setDispatchRange({
+        from: formatDateLocal(from),
+        to: formatDateLocal(today),
+      });
       return;
     }
 
@@ -965,16 +998,20 @@ export default function DashboardPage() {
         lastMonthEnd.getMonth(),
         1
       );
-      setDispatchFrom(formatDateLocal(lastMonthStart));
-      setDispatchTo(formatDateLocal(lastMonthEnd));
+      setDispatchRange({
+        from: formatDateLocal(lastMonthStart),
+        to: formatDateLocal(lastMonthEnd),
+      });
       return;
     }
 
     if (mode === "last90") {
       const from = new Date(today);
       from.setDate(from.getDate() - 89);
-      setDispatchFrom(formatDateLocal(from));
-      setDispatchTo(formatDateLocal(today));
+      setDispatchRange({
+        from: formatDateLocal(from),
+        to: formatDateLocal(today),
+      });
       return;
     }
   }
@@ -2089,19 +2126,19 @@ export default function DashboardPage() {
           <div className="filter-field-group">
             <div className="compact-field">
               <span style={{ opacity: 0.7 }}>From</span>
-              <input type="date" value={dispatchFrom} onChange={(e) => setDispatchFrom(e.target.value)}
+              <input type="date" value={dispatchFrom} onChange={(e) => setDispatchRange((range) => ({ ...range, from: e.target.value }))}
                 className="compact-input" />
             </div>
 
             <div className="compact-field">
               <span style={{ opacity: 0.7 }}>To</span>
-              <input type="date" value={dispatchTo} onChange={(e) => setDispatchTo(e.target.value)}
+              <input type="date" value={dispatchTo} onChange={(e) => setDispatchRange((range) => ({ ...range, to: e.target.value }))}
                 className="compact-input" />
             </div>
           </div>
 
           {(dispatchFrom || dispatchTo) && (
-            <button type="button" onClick={() => { setDispatchFrom(""); setDispatchTo(""); }}
+            <button type="button" onClick={() => setDispatchRange({ from: "", to: "" })}
               style={uiTheme.ghostButton}>
               Clear filter
             </button>
