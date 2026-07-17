@@ -29,12 +29,14 @@ export type ProductionPlanInputRow = {
   item?: string;
   pending?: number;
   category?: string;
+  activeOrderCount?: number;
 };
 
 export type ProductionPlanRow = {
   item: string;
   pending: number;
   category: string;
+  activeOrderCount: number;
 };
 
 export type ProductionPlanCategoryRow = {
@@ -53,6 +55,7 @@ export type ProductionPlanSnapshot = {
   fileDatePart: string;
   totalPending: number;
   itemCount: number;
+  activeOrderCount: number;
   itemRows: ProductionPlanRow[];
   categoryRows: ProductionPlanCategoryRow[];
   familyRows: ProductionPlanFamilyRow[];
@@ -62,6 +65,7 @@ export type ProductionPlanSnapshot = {
 };
 
 type MainOrderRow = {
+  id: string;
   status: string | null;
   order_lines:
     | {
@@ -198,6 +202,10 @@ export function normalizeProductionPlanRows(input: unknown): ProductionPlanRow[]
         pending,
         category: String((row as ProductionPlanInputRow)?.category ?? "").trim() ||
           "Uncategorised",
+        activeOrderCount: Math.max(
+          0,
+          Number((row as ProductionPlanInputRow)?.activeOrderCount ?? 0) || 0
+        ),
       };
     })
     .filter((row) => row.item !== "" && row.pending > 0);
@@ -267,12 +275,13 @@ export function buildFallbackProductionPlanFamilyRows(rows: ProductionPlanRow[])
   });
 }
 
-export async function loadTycoonProductionPlanRows() {
+async function loadTycoonProductionPlanData() {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("orders")
     .select(
       `
+      id,
       status,
       order_lines (
         qty,
@@ -291,7 +300,11 @@ export async function loadTycoonProductionPlanRows() {
     throw new Error(`Could not load order data for the production plan: ${error.message}`);
   }
 
-  const byItem = new Map<string, ProductionPlanRow>();
+  const activeOrderIds = new Set<string>();
+  const byItem = new Map<
+    string,
+    { row: ProductionPlanRow; orderIds: Set<string> }
+  >();
 
   for (const order of (data || []) as MainOrderRow[]) {
     const lines = Array.isArray(order?.order_lines) ? order.order_lines : [];
@@ -319,24 +332,45 @@ export async function loadTycoonProductionPlanRows() {
       if (pending <= 0) continue;
 
       const itemName = String(item?.name ?? "").trim() || "Unknown item";
+      const orderId = String(order?.id ?? "").trim();
+      if (orderId) activeOrderIds.add(orderId);
 
       if (!byItem.has(itemName)) {
         byItem.set(itemName, {
-          item: itemName,
-          pending: 0,
-          category,
+          row: {
+            item: itemName,
+            pending: 0,
+            category,
+            activeOrderCount: 0,
+          },
+          orderIds: new Set<string>(),
         });
       }
 
       const aggregate = byItem.get(itemName)!;
-      aggregate.pending += pending;
+      aggregate.row.pending += pending;
+      if (orderId) aggregate.orderIds.add(orderId);
     }
   }
 
-  return Array.from(byItem.values()).sort((a, b) => {
-    if (b.pending !== a.pending) return b.pending - a.pending;
-    return a.item.localeCompare(b.item);
-  });
+  const itemRows = Array.from(byItem.values())
+    .map(({ row, orderIds }) => ({
+      ...row,
+      activeOrderCount: orderIds.size,
+    }))
+    .sort((a, b) => {
+      if (b.pending !== a.pending) return b.pending - a.pending;
+      return a.item.localeCompare(b.item);
+    });
+
+  return {
+    itemRows,
+    activeOrderCount: activeOrderIds.size,
+  };
+}
+
+export async function loadTycoonProductionPlanRows() {
+  return (await loadTycoonProductionPlanData()).itemRows;
 }
 
 export async function resolveProductionPlanItemFamilyRows(
@@ -489,7 +523,7 @@ export async function resolveProductionPlanFamilyRows(
 export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapshot> {
   const generatedAt = new Date();
   const planDate = getProductionPlanDate(generatedAt);
-  const itemRows = await loadTycoonProductionPlanRows();
+  const { itemRows, activeOrderCount } = await loadTycoonProductionPlanData();
   const fallbackItemFamilyRows = buildFallbackProductionPlanItemFamilyRows(itemRows);
 
   let itemFamilyRows = fallbackItemFamilyRows;
@@ -516,6 +550,7 @@ export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapsh
     fileDatePart: formatIstDateFilePart(planDate),
     totalPending: itemRows.reduce((sum, row) => sum + row.pending, 0),
     itemCount: itemRows.length,
+    activeOrderCount,
     itemRows,
     categoryRows: buildProductionPlanCategoryRows(itemRows),
     familyRows,

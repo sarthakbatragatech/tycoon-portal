@@ -32,7 +32,7 @@ function estimateCategoryHeight(
   const categoryHeader = compact ? 56 : 68;
   const familyHeader = compact ? 44 : 50;
   const subfamilyHeader = compact ? 36 : 43;
-  const itemHeight = compact ? 34 : 39;
+  const itemHeight = compact ? 36 : 41;
   const sectionSpacing = compact ? 16 : 20;
 
   return (
@@ -157,7 +157,7 @@ function PlanHeader({
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          flex: 1.25,
+          flex: 1.05,
           minWidth: 0,
           padding: compact ? "18px 22px" : "24px 28px",
           border: "1px solid rgba(124, 92, 47, 0.14)",
@@ -196,7 +196,7 @@ function PlanHeader({
         style={{
           display: "flex",
           alignItems: "stretch",
-          flex: 1,
+          flex: 1.35,
           minWidth: 0,
           border: "1px solid rgba(124, 92, 47, 0.12)",
           borderRadius: compact ? 22 : 28,
@@ -215,6 +215,19 @@ function PlanHeader({
         <Metric
           label="Pending Qty"
           value={`${formatCount(snapshot.totalPending)} pcs`}
+          compact={compact}
+        />
+        <div
+          style={{
+            display: "flex",
+            width: 1,
+            alignSelf: "stretch",
+            background: "rgba(124, 92, 47, 0.13)",
+          }}
+        />
+        <Metric
+          label="Active Orders"
+          value={formatCount(snapshot.activeOrderCount)}
           compact={compact}
         />
         <div
@@ -266,14 +279,61 @@ function Quantity({
   );
 }
 
+function ItemStats({
+  pending,
+  activeOrderCount,
+  activeOrderTotal,
+  compact,
+}: {
+  pending: number;
+  activeOrderCount: number;
+  activeOrderTotal: number;
+  compact: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: compact ? 6 : 8,
+        flexShrink: 0,
+      }}
+    >
+      <Quantity value={pending} tone="item" compact={compact} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: compact ? 76 : 92,
+          padding: compact ? "4px 7px" : "5px 9px",
+          border: "1px solid rgba(38, 71, 52, 0.16)",
+          borderRadius: 999,
+          background: "rgba(38, 71, 52, 0.08)",
+          color: "#264734",
+          fontSize: compact ? 10 : 12,
+          fontWeight: 900,
+          letterSpacing: "-0.01em",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {formatCount(activeOrderCount)}/{formatCount(activeOrderTotal)} orders
+      </div>
+    </div>
+  );
+}
+
 function HierarchyCategory({
   category,
   compact,
   familyLabel,
+  activeOrderTotal,
 }: {
   category: ProductionPlanHierarchyCategoryRow;
   compact: boolean;
   familyLabel: string;
+  activeOrderTotal: number;
 }) {
   return (
     <div
@@ -428,7 +488,12 @@ function HierarchyCategory({
                       >
                         {item.label}
                       </div>
-                      <Quantity value={item.pending} tone="item" compact={compact} />
+                      <ItemStats
+                        pending={item.pending}
+                        activeOrderCount={item.activeOrderCount}
+                        activeOrderTotal={activeOrderTotal}
+                        compact={compact}
+                      />
                     </div>
                   ))}
                 </div>
@@ -519,7 +584,12 @@ function HierarchyCategory({
                         >
                           {item.label}
                         </div>
-                        <Quantity value={item.pending} tone="item" compact={compact} />
+                        <ItemStats
+                          pending={item.pending}
+                          activeOrderCount={item.activeOrderCount}
+                          activeOrderTotal={activeOrderTotal}
+                          compact={compact}
+                        />
                       </div>
                     ))}
                   </div>
@@ -595,6 +665,7 @@ function ProductionPlanHierarchyBoard({
                 category={category}
                 compact={compact}
                 familyLabel={familyLabel}
+                activeOrderTotal={snapshot.activeOrderCount}
               />
             ))}
           </div>

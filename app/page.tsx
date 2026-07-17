@@ -161,6 +161,56 @@ function getProductionPlanDate(date: Date = new Date()) {
   return new Date(date.getTime() + 24 * 60 * 60 * 1000);
 }
 
+function ProductionPlanExportItemStats({
+  item,
+  activeOrderTotal,
+}: {
+  item: { pending: number; activeOrderCount: number };
+  activeOrderTotal: number;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: 8,
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          minWidth: 82,
+          color: "#264734",
+          fontSize: 15,
+          fontWeight: 850,
+          textAlign: "right",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {Number(item.pending).toLocaleString("en-IN")} pcs
+      </div>
+      <div
+        style={{
+          minWidth: 92,
+          padding: "5px 9px",
+          borderRadius: 999,
+          border: "1px solid rgba(38, 71, 52, 0.16)",
+          background: "rgba(38, 71, 52, 0.08)",
+          color: "#264734",
+          fontSize: 12,
+          fontWeight: 850,
+          textAlign: "center",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {Number(item.activeOrderCount ?? 0).toLocaleString("en-IN")}/
+        {Number(activeOrderTotal ?? 0).toLocaleString("en-IN")} orders
+      </div>
+    </div>
+  );
+}
+
 // ---------- SALES CHART (DISPATCH-EVENTS BASED) ----------
 
 type SalesPoint = {
@@ -1051,6 +1101,7 @@ export default function DashboardPage() {
     orderFulfillmentArray,
     backlogCompanyItemsRaw,
     tycoonProductionPlanRows,
+    tycoonProductionPlanActiveOrderCount,
   } = useMemo(() => {
     const result = {
       totalOrders: 0,
@@ -1063,6 +1114,7 @@ export default function DashboardPage() {
       backlogItemsRaw: [] as any[],
       backlogCompanyItemsRaw: [] as any[],
       tycoonProductionPlanRows: [] as any[],
+      tycoonProductionPlanActiveOrderCount: 0,
     };
 
     if (!orders || orders.length === 0) return result;
@@ -1100,6 +1152,7 @@ export default function DashboardPage() {
       dispatched: number;
       pending: number;
       company: string;
+      orderId: string;
     }[] = [];
 
     const allTycoonLines: typeof allLines = [];
@@ -1142,6 +1195,7 @@ export default function DashboardPage() {
           dispatched,
           pending,
           company,
+          orderId: o.id,
         };
 
         allLines.push(lineBase);
@@ -1220,8 +1274,14 @@ export default function DashboardPage() {
 
     const byItemTycoonBacklog = new Map<
       string,
-      { item: string; pending: number; category: string }
+      {
+        item: string;
+        pending: number;
+        category: string;
+        orderIds: Set<string>;
+      }
     >();
+    const activeTycoonOrderIds = new Set<string>();
 
     for (const l of allTycoonLines) {
       const catKey =
@@ -1230,25 +1290,36 @@ export default function DashboardPage() {
           : "Uncategorised";
 
       if (isSpareCategory(catKey)) continue;
+      if (l.pending <= 0) continue;
 
       if (!byItemTycoonBacklog.has(l.itemName)) {
         byItemTycoonBacklog.set(l.itemName, {
           item: l.itemName,
           pending: 0,
           category: catKey,
+          orderIds: new Set<string>(),
         });
       }
 
       const agg = byItemTycoonBacklog.get(l.itemName)!;
       agg.pending += l.pending;
+      if (l.orderId) {
+        agg.orderIds.add(l.orderId);
+        activeTycoonOrderIds.add(l.orderId);
+      }
     }
 
     result.tycoonProductionPlanRows = Array.from(byItemTycoonBacklog.values())
+      .map(({ orderIds, ...row }) => ({
+        ...row,
+        activeOrderCount: orderIds.size,
+      }))
       .filter((d) => d.pending > 0)
       .sort((a, b) => {
         if (b.pending !== a.pending) return b.pending - a.pending;
         return String(a.item).localeCompare(String(b.item));
       });
+    result.tycoonProductionPlanActiveOrderCount = activeTycoonOrderIds.size;
 
     // ---- BACKLOG (ALL COMPANIES) ----
     const byItemAll = new Map<
@@ -1473,7 +1544,10 @@ export default function DashboardPage() {
   const tycoonPlanRowSignature = useMemo(
     () =>
       tycoonProductionPlanRows
-        .map((row: any) => `${row.item}:${row.pending}:${row.category ?? ""}`)
+        .map(
+          (row: any) =>
+            `${row.item}:${row.pending}:${row.activeOrderCount ?? 0}:${row.category ?? ""}`
+        )
         .join("|"),
     [tycoonProductionPlanRows]
   );
@@ -2882,7 +2956,7 @@ export default function DashboardPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
                   gap: 16,
                   marginBottom: 26,
                 }}
@@ -2909,6 +2983,31 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em" }}>
                     {tycoonPlanTotalPending.toLocaleString("en-IN")} pcs
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "18px 22px",
+                    borderRadius: 22,
+                    background: "rgba(255, 251, 244, 0.78)",
+                    border: "1px solid rgba(124, 92, 47, 0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: "#7c5c2f",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Active Orders
+                  </div>
+                  <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em" }}>
+                    {tycoonProductionPlanActiveOrderCount.toLocaleString("en-IN")}
                   </div>
                 </div>
 
@@ -3101,17 +3200,10 @@ export default function DashboardPage() {
                                         >
                                           {item.label}
                                         </div>
-                                        <div
-                                          style={{
-                                            minWidth: 82,
-                                            color: "#264734",
-                                            fontSize: 15,
-                                            fontWeight: 850,
-                                            textAlign: "right",
-                                          }}
-                                        >
-                                          {Number(item.pending).toLocaleString("en-IN")} pcs
-                                        </div>
+                                        <ProductionPlanExportItemStats
+                                          item={item}
+                                          activeOrderTotal={tycoonProductionPlanActiveOrderCount}
+                                        />
                                       </div>
                                     ))}
                                   </div>
@@ -3194,17 +3286,10 @@ export default function DashboardPage() {
                                           >
                                             {item.label}
                                           </div>
-                                          <div
-                                            style={{
-                                              minWidth: 82,
-                                              color: "#264734",
-                                              fontSize: 15,
-                                              fontWeight: 850,
-                                              textAlign: "right",
-                                            }}
-                                          >
-                                            {Number(item.pending).toLocaleString("en-IN")} pcs
-                                          </div>
+                                          <ProductionPlanExportItemStats
+                                            item={item}
+                                            activeOrderTotal={tycoonProductionPlanActiveOrderCount}
+                                          />
                                         </div>
                                       ))}
                                     </div>

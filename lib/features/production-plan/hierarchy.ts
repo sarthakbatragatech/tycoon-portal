@@ -2,6 +2,7 @@ export type ProductionPlanHierarchyInputRow = {
   item: string;
   pending: number;
   category?: string | null;
+  activeOrderCount?: number;
 };
 
 export type ProductionPlanItemFamilyRow = {
@@ -13,6 +14,7 @@ export type ProductionPlanHierarchyItemRow = {
   item: string;
   label: string;
   pending: number;
+  activeOrderCount: number;
 };
 
 export type ProductionPlanHierarchySubfamilyRow = {
@@ -241,6 +243,7 @@ export function buildProductionPlanHierarchy(
       item: row.item,
       label: formatProductionPlanItemLabel(row.item),
       pending,
+      activeOrderCount: Math.max(0, Number(row.activeOrderCount ?? 0) || 0),
     };
 
     if (!categories.has(category)) {
