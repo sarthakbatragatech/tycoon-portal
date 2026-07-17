@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import {
   InventoryPortalConfigError,
   normalizeProductionPlanRows,
-  resolveProductionPlanFamilyRows,
+  resolveProductionPlanItemFamilyRows,
 } from "@/lib/server/production-plan";
+import { buildProductionPlanFamilyRows } from "@/lib/features/production-plan/hierarchy";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +13,13 @@ export async function POST(request: Request) {
   const rows = normalizeProductionPlanRows(body?.rows);
 
   if (!rows.length) {
-    return NextResponse.json({ familyRows: [] });
+    return NextResponse.json({ familyRows: [], itemFamilyRows: [] });
   }
 
   try {
-    const familyRows = await resolveProductionPlanFamilyRows(rows);
-    return NextResponse.json({ familyRows });
+    const itemFamilyRows = await resolveProductionPlanItemFamilyRows(rows);
+    const familyRows = buildProductionPlanFamilyRows(rows, itemFamilyRows);
+    return NextResponse.json({ familyRows, itemFamilyRows });
   } catch (error) {
     if (error instanceof InventoryPortalConfigError) {
       return NextResponse.json({ error: error.message }, { status: 503 });

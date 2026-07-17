@@ -6,6 +6,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import useThemeMode from "@/app/_components/useThemeMode";
 import { supabase } from "@/lib/supabase";
+import {
+  buildFallbackProductionPlanItemFamilyRows,
+  buildProductionPlanHierarchy,
+  splitProductionPlanHierarchyIntoColumns,
+} from "@/lib/features/production-plan/hierarchy";
 
 // ---------- INLINE VEGA-LITE CHART COMPONENT ----------
 
@@ -154,37 +159,6 @@ function formatIstDateFilePart(date: Date = new Date()) {
 
 function getProductionPlanDate(date: Date = new Date()) {
   return new Date(date.getTime() + 24 * 60 * 60 * 1000);
-}
-
-function splitRowsIntoColumns(rows: any[], columnCount: number) {
-  if (!rows.length) return [];
-
-  const size = Math.ceil(rows.length / columnCount);
-  return Array.from({ length: columnCount }, (_, index) =>
-    rows.slice(index * size, (index + 1) * size)
-  ).filter((column) => column.length > 0);
-}
-
-function formatCategoryLabel(category: any) {
-  const value = String(category ?? "").trim();
-  if (!value) return "Uncategorised";
-
-  return value
-    .split(/\s+/)
-    .map((part) =>
-      part ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}` : part
-    )
-    .join(" ");
-}
-
-function getBomFamilyLabel(itemName: any) {
-  const value = String(itemName ?? "").trim();
-  if (!value) return "Unknown";
-
-  const modelPrefix = value.match(/^[A-Za-z]+-[A-Za-z0-9]+/);
-  if (modelPrefix) return modelPrefix[0];
-
-  return value.split(/\s+/)[0] || value;
 }
 
 // ---------- SALES CHART (DISPATCH-EVENTS BASED) ----------
@@ -489,12 +463,15 @@ const PRODUCTION_ACTIVE_STATUSES = [
   "partially_dispatched",
 ];
 
+const BACKLOG_COMPANIES = ["Swanda", "Clever Fox", "Dolphin", "Tycoon"] as const;
+type BacklogCompany = (typeof BACKLOG_COMPANIES)[number];
+
 // ---------- DASHBOARD PAGE ----------
 
 export default function DashboardPage() {
   const themeMode = useThemeMode();
   const productionPlanExportRef = useRef<HTMLDivElement | null>(null);
-  const planFamilyRequestKeyRef = useRef("");
+  const planMetadataRequestKeyRef = useRef("");
   const [isMobileViewport, setIsMobileViewport] = useState(
     () => typeof window !== "undefined" && window.innerWidth <= 768
   );
@@ -516,13 +493,16 @@ export default function DashboardPage() {
     "pending" | "pendingPercent" | "ordered"
   >("pending");
   const [backlogShowAll, setBacklogShowAll] = useState(false);
+  const [backlogCompanies, setBacklogCompanies] = useState<BacklogCompany[]>([
+    ...BACKLOG_COMPANIES,
+  ]);
   const [planImageExporting, setPlanImageExporting] = useState(false);
   const [planWhatsAppSending, setPlanWhatsAppSending] = useState(false);
   const [planImageDateLabel, setPlanImageDateLabel] = useState(() =>
     formatIstDateLabel(getProductionPlanDate(new Date()))
   );
-  const [tycoonPlanFamilyRows, setTycoonPlanFamilyRows] = useState<any[]>([]);
-  const [planFamilyRowsLoading, setPlanFamilyRowsLoading] = useState(false);
+  const [tycoonPlanItemFamilyRows, setTycoonPlanItemFamilyRows] = useState<any[]>([]);
+  const [planMetadataLoading, setPlanMetadataLoading] = useState(false);
 
   // Sales totals (dispatch-events based)
   const [salesTotals, setSalesTotals] = useState({
@@ -1069,7 +1049,7 @@ export default function DashboardPage() {
     itemPendingArray,
     categoryDemandArray,
     orderFulfillmentArray,
-    backlogItemsRaw,
+    backlogCompanyItemsRaw,
     tycoonProductionPlanRows,
   } = useMemo(() => {
     const result = {
@@ -1081,6 +1061,7 @@ export default function DashboardPage() {
       categoryDemandArray: [] as any[],
       orderFulfillmentArray: [] as any[],
       backlogItemsRaw: [] as any[],
+      backlogCompanyItemsRaw: [] as any[],
       tycoonProductionPlanRows: [] as any[],
     };
 
@@ -1316,6 +1297,34 @@ export default function DashboardPage() {
 
     result.backlogItemsRaw = backlogItemsRaw;
 
+    const byCompanyItem = new Map<
+      string,
+      { item: string; company: string; ordered: number; dispatched: number; pending: number }
+    >();
+
+    for (const l of allLines) {
+      const key = `${l.company}\u0000${l.itemName}`;
+
+      if (!byCompanyItem.has(key)) {
+        byCompanyItem.set(key, {
+          item: l.itemName,
+          company: l.company,
+          ordered: 0,
+          dispatched: 0,
+          pending: 0,
+        });
+      }
+
+      const agg = byCompanyItem.get(key)!;
+      agg.ordered += l.ordered;
+      agg.dispatched += l.dispatched;
+      agg.pending += l.pending;
+    }
+
+    result.backlogCompanyItemsRaw = Array.from(byCompanyItem.values()).filter(
+      (row) => row.pending > 0
+    );
+
     const backlogSortedForChart = [...backlogItemsRaw].sort(
       (a, b) => b.pending - a.pending
     );
@@ -1392,9 +1401,41 @@ export default function DashboardPage() {
     return result;
   }, [orders, orderFrom, orderTo]);
 
-  // Backlog rows with sorting + top/all
+  const backlogItemsForSelectedCompanies = useMemo(() => {
+    const selectedCompanies = new Set(backlogCompanies);
+    const byItem = new Map<
+      string,
+      { item: string; ordered: number; dispatched: number; pending: number }
+    >();
+
+    for (const row of backlogCompanyItemsRaw) {
+      if (!selectedCompanies.has(row.company as BacklogCompany)) continue;
+
+      if (!byItem.has(row.item)) {
+        byItem.set(row.item, {
+          item: row.item,
+          ordered: 0,
+          dispatched: 0,
+          pending: 0,
+        });
+      }
+
+      const aggregate = byItem.get(row.item)!;
+      aggregate.ordered += Number(row.ordered ?? 0);
+      aggregate.dispatched += Number(row.dispatched ?? 0);
+      aggregate.pending += Number(row.pending ?? 0);
+    }
+
+    return Array.from(byItem.values()).map((row) => ({
+      ...row,
+      pendingPercent:
+        row.ordered > 0 ? Math.round((row.pending / row.ordered) * 100) : 0,
+    }));
+  }, [backlogCompanyItemsRaw, backlogCompanies]);
+
+  // Backlog rows with company filtering + sorting + top/all
   const backlogRows = useMemo(() => {
-    let rows = [...backlogItemsRaw];
+    let rows = [...backlogItemsForSelectedCompanies];
 
     rows.sort((a, b) => {
       if (backlogSortBy === "pending") return b.pending - a.pending;
@@ -1405,7 +1446,15 @@ export default function DashboardPage() {
 
     if (!backlogShowAll) rows = rows.slice(0, 8);
     return rows;
-  }, [backlogItemsRaw, backlogSortBy, backlogShowAll]);
+  }, [backlogItemsForSelectedCompanies, backlogSortBy, backlogShowAll]);
+
+  function toggleBacklogCompany(company: BacklogCompany) {
+    setBacklogCompanies((current) =>
+      current.includes(company)
+        ? current.filter((selected) => selected !== company)
+        : [...current, company]
+    );
+  }
 
   const tycoonPlanTotalPending = useMemo(
     () =>
@@ -1416,60 +1465,10 @@ export default function DashboardPage() {
     [tycoonProductionPlanRows]
   );
 
-  const tycoonPlanColumns = useMemo(() => {
-    const columnCount =
-      tycoonProductionPlanRows.length > 40
-        ? 3
-        : tycoonProductionPlanRows.length > 18
-          ? 2
-          : 1;
-
-    return splitRowsIntoColumns(tycoonProductionPlanRows, columnCount);
-  }, [tycoonProductionPlanRows]);
-
-  const tycoonPlanCategoryRows = useMemo(() => {
-    const byCategory = new Map<string, { category: string; pending: number }>();
-
-    for (const row of tycoonProductionPlanRows) {
-      const category = formatCategoryLabel(row.category);
-      if (!byCategory.has(category)) {
-        byCategory.set(category, {
-          category,
-          pending: 0,
-        });
-      }
-
-      const aggregate = byCategory.get(category)!;
-      aggregate.pending += Number(row.pending ?? 0);
-    }
-
-    return Array.from(byCategory.values()).sort((a, b) => {
-      if (b.pending !== a.pending) return b.pending - a.pending;
-      return String(a.category).localeCompare(String(b.category));
-    });
-  }, [tycoonProductionPlanRows]);
-
-  const fallbackTycoonPlanFamilyRows = useMemo(() => {
-    const byFamily = new Map<string, { family: string; pending: number }>();
-
-    for (const row of tycoonProductionPlanRows) {
-      const family = getBomFamilyLabel(row.item);
-      if (!byFamily.has(family)) {
-        byFamily.set(family, {
-          family,
-          pending: 0,
-        });
-      }
-
-      const aggregate = byFamily.get(family)!;
-      aggregate.pending += Number(row.pending ?? 0);
-    }
-
-    return Array.from(byFamily.values()).sort((a, b) => {
-      if (b.pending !== a.pending) return b.pending - a.pending;
-      return String(a.family).localeCompare(String(b.family));
-    });
-  }, [tycoonProductionPlanRows]);
+  const fallbackTycoonPlanItemFamilyRows = useMemo(
+    () => buildFallbackProductionPlanItemFamilyRows(tycoonProductionPlanRows),
+    [tycoonProductionPlanRows]
+  );
 
   const tycoonPlanRowSignature = useMemo(
     () =>
@@ -1479,37 +1478,42 @@ export default function DashboardPage() {
     [tycoonProductionPlanRows]
   );
 
-  const tycoonPlanResolvedFamilyRows =
-    planFamilyRequestKeyRef.current === tycoonPlanRowSignature && tycoonPlanFamilyRows.length > 0
-      ? tycoonPlanFamilyRows
-      : fallbackTycoonPlanFamilyRows;
+  const tycoonPlanResolvedItemFamilyRows =
+    planMetadataRequestKeyRef.current === tycoonPlanRowSignature &&
+    tycoonPlanItemFamilyRows.length > 0
+      ? tycoonPlanItemFamilyRows
+      : fallbackTycoonPlanItemFamilyRows;
 
-  const tycoonPlanCategoryColumns = useMemo(() => {
-    const columnCount = tycoonPlanCategoryRows.length > 8 ? 2 : 1;
-    return splitRowsIntoColumns(tycoonPlanCategoryRows, columnCount);
-  }, [tycoonPlanCategoryRows]);
+  const tycoonPlanHierarchyRows = useMemo(
+    () =>
+      buildProductionPlanHierarchy(
+        tycoonProductionPlanRows,
+        tycoonPlanResolvedItemFamilyRows
+      ),
+    [tycoonProductionPlanRows, tycoonPlanResolvedItemFamilyRows]
+  );
 
-  const tycoonPlanFamilyColumns = useMemo(() => {
-    const columnCount = tycoonPlanResolvedFamilyRows.length > 8 ? 2 : 1;
-    return splitRowsIntoColumns(tycoonPlanResolvedFamilyRows, columnCount);
-  }, [tycoonPlanResolvedFamilyRows]);
+  const tycoonPlanHierarchyColumns = useMemo(
+    () => splitProductionPlanHierarchyIntoColumns(tycoonPlanHierarchyRows, 2),
+    [tycoonPlanHierarchyRows]
+  );
 
-  async function loadTycoonPlanFamilyRows(force = false) {
+  async function loadTycoonPlanMetadata(force = false) {
     if (!tycoonProductionPlanRows.length) {
-      setTycoonPlanFamilyRows([]);
-      planFamilyRequestKeyRef.current = "";
+      setTycoonPlanItemFamilyRows([]);
+      planMetadataRequestKeyRef.current = "";
       return [];
     }
 
     if (
       !force &&
-      planFamilyRequestKeyRef.current === tycoonPlanRowSignature &&
-      tycoonPlanFamilyRows.length > 0
+      planMetadataRequestKeyRef.current === tycoonPlanRowSignature &&
+      tycoonPlanItemFamilyRows.length > 0
     ) {
-      return tycoonPlanFamilyRows;
+      return tycoonPlanItemFamilyRows;
     }
 
-    setPlanFamilyRowsLoading(true);
+    setPlanMetadataLoading(true);
 
     try {
       const response = await fetch("/api/production-plan-metadata", {
@@ -1521,6 +1525,7 @@ export default function DashboardPage() {
           rows: tycoonProductionPlanRows.map((row: any) => ({
             item: row.item,
             pending: row.pending,
+            category: row.category,
           })),
         }),
       });
@@ -1537,9 +1542,9 @@ export default function DashboardPage() {
 
         if ([401, 403, 404].includes(response.status)) {
           console.warn(`${statusMessage}. Falling back to item-name family grouping.`);
-          setTycoonPlanFamilyRows(fallbackTycoonPlanFamilyRows);
-          planFamilyRequestKeyRef.current = tycoonPlanRowSignature;
-          return fallbackTycoonPlanFamilyRows;
+          setTycoonPlanItemFamilyRows(fallbackTycoonPlanItemFamilyRows);
+          planMetadataRequestKeyRef.current = tycoonPlanRowSignature;
+          return fallbackTycoonPlanItemFamilyRows;
         }
 
         throw new Error(statusMessage);
@@ -1547,23 +1552,23 @@ export default function DashboardPage() {
 
       const payload = await response.json();
       const nextRows =
-        Array.isArray(payload?.familyRows) && payload.familyRows.length > 0
-          ? payload.familyRows
-          : fallbackTycoonPlanFamilyRows;
+        Array.isArray(payload?.itemFamilyRows) && payload.itemFamilyRows.length > 0
+          ? payload.itemFamilyRows
+          : fallbackTycoonPlanItemFamilyRows;
 
-      setTycoonPlanFamilyRows(nextRows);
-      planFamilyRequestKeyRef.current = tycoonPlanRowSignature;
+      setTycoonPlanItemFamilyRows(nextRows);
+      planMetadataRequestKeyRef.current = tycoonPlanRowSignature;
       return nextRows;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn(
-        `Error loading production plan family rows. Falling back to item-name family grouping. ${errorMessage}`
+        `Error loading production plan metadata. Falling back to item-name family grouping. ${errorMessage}`
       );
-      setTycoonPlanFamilyRows(fallbackTycoonPlanFamilyRows);
-      planFamilyRequestKeyRef.current = tycoonPlanRowSignature;
-      return fallbackTycoonPlanFamilyRows;
+      setTycoonPlanItemFamilyRows(fallbackTycoonPlanItemFamilyRows);
+      planMetadataRequestKeyRef.current = tycoonPlanRowSignature;
+      return fallbackTycoonPlanItemFamilyRows;
     } finally {
-      setPlanFamilyRowsLoading(false);
+      setPlanMetadataLoading(false);
     }
   }
 
@@ -1591,7 +1596,15 @@ export default function DashboardPage() {
 
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tycoon-backlog.csv";
+    const companyFilePart =
+      backlogCompanies.length === 1
+        ? backlogCompanies[0].toLowerCase().replace(/\s+/g, "-")
+        : backlogCompanies.length === BACKLOG_COMPANIES.length
+          ? "all-companies"
+          : backlogCompanies
+              .map((company) => company.toLowerCase().replace(/\s+/g, "-"))
+              .join("-");
+    a.download = `${companyFilePart}-backlog.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1616,7 +1629,7 @@ export default function DashboardPage() {
     setPlanImageExporting(true);
 
     try {
-      await loadTycoonPlanFamilyRows();
+      await loadTycoonPlanMetadata();
 
       if (document.fonts?.ready) {
         await document.fonts.ready;
@@ -2531,9 +2544,56 @@ export default function DashboardPage() {
           <div className="card" style={{ marginBottom: 18 }}>
             <div className="card-label">Backlog Table · Pending by Item</div>
             <div className="card-meta">
-              Same data as the backlog chart (all companies), with sorting, filters & export.
+              Filter the table and CSV export by company, then sort or expand the results.
               The plan image export uses Tycoon items only and excludes spares.
             </div>
+
+            <fieldset className="backlog-company-filter">
+              <legend>Company</legend>
+              <div className="backlog-company-filter-row">
+                <div className="backlog-company-options">
+                  {BACKLOG_COMPANIES.map((company) => {
+                    const checked = backlogCompanies.includes(company);
+
+                    return (
+                      <label
+                        key={company}
+                        className={`backlog-company-option${checked ? " is-selected" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleBacklogCompany(company)}
+                        />
+                        <span>{company}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="backlog-company-filter-actions">
+                  <span aria-live="polite">
+                    {backlogCompanies.length === BACKLOG_COMPANIES.length
+                      ? "All companies selected"
+                      : `${backlogCompanies.length} of ${BACKLOG_COMPANIES.length} selected`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setBacklogCompanies([...BACKLOG_COMPANIES])}
+                    disabled={backlogCompanies.length === BACKLOG_COMPANIES.length}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBacklogCompanies([])}
+                    disabled={backlogCompanies.length === 0}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </fieldset>
 
             {/* Controls */}
             <div
@@ -2639,10 +2699,12 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {backlogItemsRaw.length === 0 && (
+                  {backlogItemsForSelectedCompanies.length === 0 && (
                     <tr>
                       <td colSpan={4} className="table-empty-cell">
-                        No pending backlog · everything is fully dispatched.
+                        {backlogCompanies.length === 0
+                          ? "Select at least one company to view its backlog."
+                          : "No pending backlog for the selected companies."}
                       </td>
                     </tr>
                   )}
@@ -2770,7 +2832,7 @@ export default function DashboardPage() {
                       letterSpacing: "-0.03em",
                     }}
                   >
-                    Pending by Item
+                    Production Build Plan
                   </div>
                 </div>
 
@@ -2878,268 +2940,291 @@ export default function DashboardPage() {
 
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${Math.max(tycoonPlanColumns.length, 1)}, minmax(0, 1fr))`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                   gap: 18,
+                  marginBottom: 14,
+                  padding: "0 4px",
+                  color: "#7c5c2f",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: "0.13em",
+                  textTransform: "uppercase",
                 }}
               >
-                {tycoonPlanColumns.map((column, columnIndex) => (
-                  <div
-                    key={`plan-column-${columnIndex}`}
-                    style={{
-                      padding: 18,
-                      borderRadius: 24,
-                      background: "rgba(255, 252, 247, 0.74)",
-                      border: "1px solid rgba(124, 92, 47, 0.12)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(0, 1fr) auto",
-                        gap: 12,
-                        padding: "0 8px 12px",
-                        marginBottom: 8,
-                        borderBottom: "1px solid rgba(124, 92, 47, 0.16)",
-                        fontSize: 12,
-                        fontWeight: 800,
-                        letterSpacing: "0.12em",
-                        textTransform: "uppercase",
-                        color: "#7c5c2f",
-                      }}
-                    >
-                      <div>Item</div>
-                      <div>Pending</div>
-                    </div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {column.map((row: any, rowIndex: number) => (
-                        <div
-                          key={`${columnIndex}-${row.item}-${rowIndex}`}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "minmax(0, 1fr) auto",
-                            gap: 12,
-                            alignItems: "center",
-                            padding: "14px 16px",
-                            borderRadius: 18,
-                            background: "rgba(255, 255, 255, 0.8)",
-                            border: "1px solid rgba(124, 92, 47, 0.08)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 20,
-                              lineHeight: 1.35,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {row.item}
-                          </div>
-                          <div
-                            style={{
-                              minWidth: 118,
-                              padding: "10px 14px",
-                              borderRadius: 999,
-                              background: "#264734",
-                              color: "#f9f4ea",
-                              fontSize: 18,
-                              fontWeight: 800,
-                              textAlign: "center",
-                              letterSpacing: "-0.02em",
-                            }}
-                          >
-                            {Number(row.pending ?? 0).toLocaleString("en-IN")} pcs
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                <span>Build hierarchy</span>
+                <span>All quantities pending</span>
               </div>
 
               <div
                 style={{
-                  marginTop: 22,
                   display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gridTemplateColumns: `repeat(${Math.max(tycoonPlanHierarchyColumns.length, 1)}, minmax(0, 1fr))`,
                   gap: 18,
+                  alignItems: "start",
                 }}
               >
-                <div
-                  style={{
-                    padding: 18,
-                    borderRadius: 24,
-                    background: "rgba(255, 252, 247, 0.74)",
-                    border: "1px solid rgba(124, 92, 47, 0.12)",
-                  }}
-                >
+                {tycoonPlanHierarchyColumns.map((column, columnIndex) => (
                   <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) auto",
-                      gap: 12,
-                      padding: "0 8px 12px",
-                      marginBottom: 8,
-                      borderBottom: "1px solid rgba(124, 92, 47, 0.16)",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      letterSpacing: "0.12em",
-                      textTransform: "uppercase",
-                      color: "#7c5c2f",
-                    }}
+                    key={`hierarchy-column-${columnIndex}`}
+                    style={{ display: "grid", gap: 18 }}
                   >
-                    <div>Category</div>
-                    <div>Pending</div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: `repeat(${Math.max(tycoonPlanCategoryColumns.length, 1)}, minmax(0, 1fr))`,
-                      gap: 12,
-                    }}
-                  >
-                    {tycoonPlanCategoryColumns.map((column, columnIndex) => (
-                      <div key={`category-column-${columnIndex}`} style={{ display: "grid", gap: 10 }}>
-                        {column.map((row: any, rowIndex: number) => (
-                          <div
-                            key={`category-${columnIndex}-${row.category}-${rowIndex}`}
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "minmax(0, 1fr) auto",
-                              gap: 12,
-                              alignItems: "center",
-                              padding: "14px 16px",
-                              borderRadius: 18,
-                              background: "rgba(255, 255, 255, 0.8)",
-                              border: "1px solid rgba(124, 92, 47, 0.08)",
-                            }}
-                          >
+                    {column.map((category: any) => (
+                      <div
+                        key={category.category}
+                        style={{
+                          overflow: "hidden",
+                          borderRadius: 24,
+                          border: "1px solid rgba(38, 71, 52, 0.18)",
+                          background: "rgba(255, 252, 247, 0.82)",
+                          boxShadow: "0 12px 30px rgba(84, 66, 42, 0.07)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) auto",
+                            alignItems: "center",
+                            gap: 16,
+                            padding: "17px 20px",
+                            background: "#264734",
+                            color: "#fffaf0",
+                          }}
+                        >
+                          <div>
                             <div
                               style={{
-                                fontSize: 20,
-                                lineHeight: 1.35,
-                                fontWeight: 600,
-                              }}
-                            >
-                              {row.category}
-                            </div>
-                            <div
-                              style={{
-                                minWidth: 118,
-                                padding: "10px 14px",
-                                borderRadius: 999,
-                                background: "#264734",
-                                color: "#f9f4ea",
-                                fontSize: 18,
+                                marginBottom: 4,
+                                color: "rgba(255, 250, 240, 0.68)",
+                                fontSize: 9,
                                 fontWeight: 800,
-                                textAlign: "center",
-                                letterSpacing: "-0.02em",
+                                letterSpacing: "0.16em",
+                                textTransform: "uppercase",
                               }}
                             >
-                              {Number(row.pending ?? 0).toLocaleString("en-IN")} pcs
+                              Category
+                            </div>
+                            <div style={{ fontSize: 24, fontWeight: 850, lineHeight: 1.1 }}>
+                              {category.category}
                             </div>
                           </div>
-                        ))}
+                          <div
+                            style={{
+                              minWidth: 126,
+                              padding: "9px 13px",
+                              borderRadius: 999,
+                              background: "rgba(255, 250, 240, 0.12)",
+                              border: "1px solid rgba(255, 250, 240, 0.2)",
+                              fontSize: 19,
+                              fontWeight: 850,
+                              textAlign: "center",
+                            }}
+                          >
+                            {Number(category.pending).toLocaleString("en-IN")} pcs
+                          </div>
+                        </div>
+
+                        <div style={{ display: "grid", gap: 12, padding: 14 }}>
+                          {category.families.map((family: any) => (
+                            <div
+                              key={`${category.category}-${family.family}`}
+                              style={{
+                                overflow: "hidden",
+                                borderRadius: 18,
+                                border: "1px solid rgba(124, 92, 47, 0.14)",
+                                background: "rgba(255, 255, 255, 0.82)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "minmax(0, 1fr) auto",
+                                  alignItems: "center",
+                                  gap: 12,
+                                  padding: "12px 15px",
+                                  background: "#ead8b7",
+                                  color: "#2b251c",
+                                }}
+                              >
+                                <div>
+                                  <div
+                                    style={{
+                                      marginBottom: 2,
+                                      color: "#7c5c2f",
+                                      fontSize: 8,
+                                      fontWeight: 850,
+                                      letterSpacing: "0.14em",
+                                      textTransform: "uppercase",
+                                    }}
+                                  >
+                                    BOM family
+                                  </div>
+                                  <div style={{ fontSize: 19, fontWeight: 850 }}>
+                                    {family.family}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 17, fontWeight: 850 }}>
+                                  {Number(family.pending).toLocaleString("en-IN")} pcs
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 9, padding: 10 }}>
+                                {family.items.length > 0 && (
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gap: 1,
+                                      overflow: "hidden",
+                                      borderRadius: 11,
+                                      background: "rgba(124, 92, 47, 0.1)",
+                                    }}
+                                  >
+                                    {family.items.map((item: any) => (
+                                      <div
+                                        key={item.item}
+                                        style={{
+                                          display: "grid",
+                                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                                          alignItems: "center",
+                                          gap: 10,
+                                          padding: "10px 12px",
+                                          background: "rgba(255, 255, 255, 0.94)",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            fontSize: 16,
+                                            fontWeight: 700,
+                                            lineHeight: 1.25,
+                                          }}
+                                        >
+                                          {item.label}
+                                        </div>
+                                        <div
+                                          style={{
+                                            minWidth: 82,
+                                            color: "#264734",
+                                            fontSize: 15,
+                                            fontWeight: 850,
+                                            textAlign: "right",
+                                          }}
+                                        >
+                                          {Number(item.pending).toLocaleString("en-IN")} pcs
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {family.subfamilies.map((subfamily: any) => (
+                                  <div
+                                    key={`${category.category}-${family.family}-${subfamily.subfamily}`}
+                                    style={{
+                                      borderRadius: 14,
+                                      border: "1px solid rgba(124, 92, 47, 0.1)",
+                                      borderLeft: "5px solid #c57b38",
+                                      background: "#fbf6ed",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "grid",
+                                        gridTemplateColumns: "minmax(0, 1fr) auto",
+                                        alignItems: "center",
+                                        gap: 10,
+                                        padding: "10px 12px 8px",
+                                      }}
+                                    >
+                                      <div>
+                                        <div
+                                          style={{
+                                            color: "#9a6837",
+                                            fontSize: 8,
+                                            fontWeight: 850,
+                                            letterSpacing: "0.12em",
+                                            textTransform: "uppercase",
+                                          }}
+                                        >
+                                          Shared platform
+                                        </div>
+                                        <div style={{ fontSize: 17, fontWeight: 800 }}>
+                                          {subfamily.subfamily}
+                                        </div>
+                                      </div>
+                                      <div
+                                        style={{
+                                          color: "#264734",
+                                          fontSize: 16,
+                                          fontWeight: 850,
+                                        }}
+                                      >
+                                        {Number(subfamily.pending).toLocaleString("en-IN")} pcs
+                                      </div>
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        display: "grid",
+                                        gap: 1,
+                                        margin: "0 8px 8px",
+                                        overflow: "hidden",
+                                        borderRadius: 10,
+                                        background: "rgba(124, 92, 47, 0.1)",
+                                      }}
+                                    >
+                                      {subfamily.items.map((item: any) => (
+                                        <div
+                                          key={item.item}
+                                          style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "minmax(0, 1fr) auto",
+                                            alignItems: "center",
+                                            gap: 10,
+                                            padding: "9px 11px",
+                                            background: "rgba(255, 255, 255, 0.9)",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              fontSize: 15,
+                                              fontWeight: 650,
+                                              lineHeight: 1.25,
+                                            }}
+                                          >
+                                            {item.label}
+                                          </div>
+                                          <div
+                                            style={{
+                                              minWidth: 82,
+                                              color: "#264734",
+                                              fontSize: 15,
+                                              fontWeight: 850,
+                                              textAlign: "right",
+                                            }}
+                                          >
+                                            {Number(item.pending).toLocaleString("en-IN")} pcs
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: 18,
-                    borderRadius: 24,
-                    background: "rgba(255, 252, 247, 0.74)",
-                    border: "1px solid rgba(124, 92, 47, 0.12)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) auto",
-                      gap: 12,
-                      padding: "0 8px 12px",
-                      marginBottom: 8,
-                      borderBottom: "1px solid rgba(124, 92, 47, 0.16)",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      letterSpacing: "0.12em",
-                      textTransform: "uppercase",
-                      color: "#7c5c2f",
-                    }}
-                  >
-                    <div>BOM Family</div>
-                    <div>Pending</div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: `repeat(${Math.max(tycoonPlanFamilyColumns.length, 1)}, minmax(0, 1fr))`,
-                      gap: 12,
-                    }}
-                  >
-                    {tycoonPlanFamilyColumns.map((column, columnIndex) => (
-                      <div key={`family-column-${columnIndex}`} style={{ display: "grid", gap: 10 }}>
-                        {column.map((row: any, rowIndex: number) => (
-                          <div
-                            key={`family-${columnIndex}-${row.family}-${rowIndex}`}
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "minmax(0, 1fr) auto",
-                              gap: 12,
-                              alignItems: "center",
-                              padding: "14px 16px",
-                              borderRadius: 18,
-                              background: "rgba(255, 255, 255, 0.8)",
-                              border: "1px solid rgba(124, 92, 47, 0.08)",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: 20,
-                                lineHeight: 1.35,
-                                fontWeight: 600,
-                              }}
-                            >
-                              {row.family}
-                            </div>
-                            <div
-                              style={{
-                                minWidth: 118,
-                                padding: "10px 14px",
-                                borderRadius: 999,
-                                background: "#264734",
-                                color: "#f9f4ea",
-                                fontSize: 18,
-                                fontWeight: 800,
-                                textAlign: "center",
-                                letterSpacing: "-0.02em",
-                              }}
-                            >
-                              {Number(row.pending ?? 0).toLocaleString("en-IN")} pcs
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-
-                  {planFamilyRowsLoading && (
-                    <div
-                      style={{
-                        marginTop: 12,
-                        fontSize: 12,
-                        color: "#7c5c2f",
-                      }}
-                    >
-                      Refreshing family data from inventory portal...
-                    </div>
-                  )}
-                </div>
+                ))}
               </div>
+
+              {planMetadataLoading && (
+                <div style={{ marginTop: 12, fontSize: 12, color: "#7c5c2f" }}>
+                  Refreshing BOM family data from inventory portal...
+                </div>
+              )}
 
               <div
                 style={{

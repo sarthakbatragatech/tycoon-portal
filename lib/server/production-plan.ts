@@ -2,6 +2,20 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  buildFallbackProductionPlanItemFamilyRows,
+  buildProductionPlanFamilyRows,
+  buildProductionPlanHierarchy,
+  formatProductionPlanCategoryLabel,
+  getFallbackProductionPlanFamilyLabel,
+  type ProductionPlanHierarchyCategoryRow,
+  type ProductionPlanItemFamilyRow,
+} from "@/lib/features/production-plan/hierarchy";
+
+export type {
+  ProductionPlanHierarchyCategoryRow,
+  ProductionPlanItemFamilyRow,
+} from "@/lib/features/production-plan/hierarchy";
 
 export const PRODUCTION_ACTIVE_STATUSES = [
   "pending",
@@ -14,6 +28,7 @@ export const PRODUCTION_ACTIVE_STATUSES = [
 export type ProductionPlanInputRow = {
   item?: string;
   pending?: number;
+  category?: string;
 };
 
 export type ProductionPlanRow = {
@@ -41,6 +56,8 @@ export type ProductionPlanSnapshot = {
   itemRows: ProductionPlanRow[];
   categoryRows: ProductionPlanCategoryRow[];
   familyRows: ProductionPlanFamilyRow[];
+  itemFamilyRows: ProductionPlanItemFamilyRow[];
+  hierarchyRows: ProductionPlanHierarchyCategoryRow[];
   familySource: "inventory" | "fallback";
 };
 
@@ -129,18 +146,6 @@ function isSpareCategory(category: unknown) {
   );
 }
 
-function formatCategoryLabel(category: unknown) {
-  const value = String(category ?? "").trim();
-  if (!value) return "Uncategorised";
-
-  return value
-    .split(/\s+/)
-    .map((part) =>
-      part ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}` : part
-    )
-    .join(" ");
-}
-
 function inferFamilyLabel(value: unknown) {
   const raw = String(value ?? "").trim();
   if (!raw) return "Unknown";
@@ -153,13 +158,7 @@ function inferFamilyLabel(value: unknown) {
 }
 
 export function getBomFamilyLabel(itemName: unknown) {
-  const value = String(itemName ?? "").trim();
-  if (!value) return "Unknown";
-
-  const modelPrefix = value.match(/^[A-Za-z]+-[A-Za-z0-9]+/);
-  if (modelPrefix) return modelPrefix[0];
-
-  return value.split(/\s+/)[0] || value;
+  return getFallbackProductionPlanFamilyLabel(itemName);
 }
 
 export function formatIstDateLabel(date: Date = new Date()) {
@@ -197,7 +196,8 @@ export function normalizeProductionPlanRows(input: unknown): ProductionPlanRow[]
       return {
         item,
         pending,
-        category: "Uncategorised",
+        category: String((row as ProductionPlanInputRow)?.category ?? "").trim() ||
+          "Uncategorised",
       };
     })
     .filter((row) => row.item !== "" && row.pending > 0);
@@ -227,7 +227,7 @@ export function buildProductionPlanCategoryRows(rows: ProductionPlanRow[]) {
   const byCategory = new Map<string, ProductionPlanCategoryRow>();
 
   for (const row of rows) {
-    const category = formatCategoryLabel(row.category);
+    const category = formatProductionPlanCategoryLabel(row.category);
     if (!byCategory.has(category)) {
       byCategory.set(category, {
         category,
@@ -339,9 +339,11 @@ export async function loadTycoonProductionPlanRows() {
   });
 }
 
-export async function resolveProductionPlanFamilyRows(inputRows: ProductionPlanInputRow[]) {
+export async function resolveProductionPlanItemFamilyRows(
+  inputRows: ProductionPlanInputRow[]
+) {
   const rows = normalizeProductionPlanRows(inputRows);
-  if (!rows.length) return [] as ProductionPlanFamilyRow[];
+  if (!rows.length) return [] as ProductionPlanItemFamilyRow[];
 
   const url = process.env.INVENTORY_PORTAL_SUPABASE_URL;
   const secret = process.env.INVENTORY_PORTAL_SUPABASE_SECRET_KEY;
@@ -463,39 +465,40 @@ export async function resolveProductionPlanFamilyRows(inputRows: ProductionPlanI
     );
   }
 
-  const byFamily = new Map<string, ProductionPlanFamilyRow>();
-
-  for (const row of rows) {
+  return rows.map((row) => {
     const key = normalizeItemKey(row.item);
     const family = familyByModelName.get(key) || inferFamilyLabel(row.item);
 
-    if (!byFamily.has(family)) {
-      byFamily.set(family, { family, pending: 0 });
-    }
-
-    const aggregate = byFamily.get(family)!;
-    aggregate.pending += row.pending;
-  }
-
-  return Array.from(byFamily.values()).sort((a, b) => {
-    if (b.pending !== a.pending) return b.pending - a.pending;
-    return a.family.localeCompare(b.family);
+    return {
+      item: row.item,
+      family,
+    };
   });
+}
+
+export async function resolveProductionPlanFamilyRows(
+  inputRows: ProductionPlanInputRow[]
+) {
+  const rows = normalizeProductionPlanRows(inputRows);
+  if (!rows.length) return [] as ProductionPlanFamilyRow[];
+
+  const itemFamilyRows = await resolveProductionPlanItemFamilyRows(rows);
+  return buildProductionPlanFamilyRows(rows, itemFamilyRows);
 }
 
 export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapshot> {
   const generatedAt = new Date();
   const planDate = getProductionPlanDate(generatedAt);
   const itemRows = await loadTycoonProductionPlanRows();
-  const fallbackFamilyRows = buildFallbackProductionPlanFamilyRows(itemRows);
+  const fallbackItemFamilyRows = buildFallbackProductionPlanItemFamilyRows(itemRows);
 
-  let familyRows = fallbackFamilyRows;
+  let itemFamilyRows = fallbackItemFamilyRows;
   let familySource: ProductionPlanSnapshot["familySource"] = "fallback";
 
   try {
-    const resolvedFamilyRows = await resolveProductionPlanFamilyRows(itemRows);
-    if (resolvedFamilyRows.length > 0) {
-      familyRows = resolvedFamilyRows;
+    const resolvedItemFamilyRows = await resolveProductionPlanItemFamilyRows(itemRows);
+    if (resolvedItemFamilyRows.length > 0) {
+      itemFamilyRows = resolvedItemFamilyRows;
       familySource = "inventory";
     }
   } catch (error) {
@@ -504,6 +507,8 @@ export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapsh
       error
     );
   }
+
+  const familyRows = buildProductionPlanFamilyRows(itemRows, itemFamilyRows);
 
   return {
     generatedAtIso: generatedAt.toISOString(),
@@ -514,6 +519,8 @@ export async function loadProductionPlanSnapshot(): Promise<ProductionPlanSnapsh
     itemRows,
     categoryRows: buildProductionPlanCategoryRows(itemRows),
     familyRows,
+    itemFamilyRows,
+    hierarchyRows: buildProductionPlanHierarchy(itemRows, itemFamilyRows),
     familySource,
   };
 }

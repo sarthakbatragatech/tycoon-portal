@@ -558,6 +558,115 @@ body {
   font-size: 12px;
 }
 
+.backlog-company-filter {
+  min-width: 0;
+  margin: 12px 0 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.backlog-company-filter legend {
+  padding: 0 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.backlog-company-filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backlog-company-options,
+.backlog-company-filter-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.backlog-company-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 999px;
+  background: var(--surface-plain);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.backlog-company-option:hover {
+  border-color: var(--text-soft);
+  color: var(--text-primary);
+}
+
+.backlog-company-option.is-selected {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.backlog-company-option input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--text-primary);
+  cursor: pointer;
+}
+
+.backlog-company-option:focus-within {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.backlog-company-filter-actions {
+  justify-content: flex-end;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.backlog-company-filter-actions button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.backlog-company-filter-actions button:disabled {
+  color: var(--text-soft);
+  cursor: default;
+  opacity: 0.55;
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .backlog-company-filter-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .backlog-company-filter-actions {
+    justify-content: flex-start;
+  }
+}
+
 .selector-actions {
   margin-top: 10px;
   display: flex;
